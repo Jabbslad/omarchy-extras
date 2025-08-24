@@ -32,3 +32,36 @@ if ! grep -qxF 'eval "$(starship init bash)"' $HOME/.bashrc; then
 fi
 
 cp zig.lua $HOME/.config/nvim/lua/plugins/zig.lua
+
+omarchy-theme-install https://github.com/omacom-io/omarchy-synthwave84-theme.git
+
+MODEL="$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo "")"
+VENDOR="$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || echo "")"
+
+if [[ "$MODEL" == "L140PU" ]]; then
+  echo "[install] Detected Clevo $MODEL ($VENDOR), installing ec-pat-sen2.service…"
+
+  sudo tee /etc/systemd/system/ec-pat-sen2.service >/dev/null <<'EOF'
+# Pick your °C → hex:
+# 60 °C → (273+60)*10 = 3330 → 0x0D02
+# 62 °C → 3350 → 0x0D16
+# 70 °C → 3433 → 0x0D69
+[Unit]
+Description=Program EC PAT1 quiet threshold (SEN2)
+After=multi-user.target suspend.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'modprobe acpi_call && echo "\_SB.PC00.LPCB.EC.SEN2.PAT1 0x0D36" > /proc/acpi/call'
+
+[Install]
+WantedBy=multi-user.target suspend.target
+EOF
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now ec-pat-sen2.service
+
+else
+  echo "[install] Not an L141PU (got: $MODEL / $VENDOR). Skipping fan service."
+fi
