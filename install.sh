@@ -6,7 +6,13 @@ printf '%s\n' 1password-beta 1password-cli kdenlive obsidian-bin obs-studio pint
 
 mise use -g node
 mise use -g zig
+if ! command -v zls &>/dev/null; then
+  echo "installing zls"
+  mise plugin add zls https://github.com/jabbslad/mise-zls.git
+  mise use -g zls@master
+fi
 mise use -g rust
+mise reshim
 
 npm install -g @anthropic-ai/claude-code
 npm install -g @qwen-code/qwen-code
