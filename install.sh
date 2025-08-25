@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-printf '%s\n' 1password-beta 1password-cli kdenlive obsidian-bin obs-studio pinta libreoffice-fresh xournalpp zoom |
+printf '%s\n' 1password-beta 1password-cli kdenlive obs-studio pinta libreoffice-fresh xournalpp zoom |
   while read -r pkg; do pacman -Qq "$pkg" &>/dev/null && yay -Rns --noconfirm "$pkg"; done || true
 
 mise use -g node
@@ -42,5 +42,5 @@ if [[ "$MODEL" == "L140PU" ]]; then
   echo "[install] Detected Clevo $MODEL, installing tuxedo control center and dkms"
   yay -S --noconfirm --needed tuxedo-drivers-dkms tuxedo-control-center-bin
 else
-  echo "[install] Not an L141PU (got: $MODEL / $VENDOR). Skipping fan service."
+  echo "[install] Not an L141PU (got: $MODEL). Skipping fan service."
 fi
