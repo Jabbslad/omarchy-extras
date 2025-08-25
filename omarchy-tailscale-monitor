@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# Combined Tailscale status and monitor for Waybar
+# Outputs current status then monitors for changes
+
+# Function to output current status as JSON for waybar
+output_status() {
+  # Check if tailscale is installed
+  if ! command -v tailscale &>/dev/null; then
+    exit 0
+  fi
+
+  # Check if tailscaled service is running
+  if ! systemctl is-active tailscaled.service &>/dev/null; then
+    exit 0
+  fi
+
+  # Get tailscale status
+  STATUS=$(tailscale status --json 2>/dev/null)
+
+  if [ -z "$STATUS" ]; then
+    exit 0
+  fi
+
+  # Parse the JSON to check if we're connected
+  BACKEND_STATE=$(echo "$STATUS" | jq -r '.BackendState' 2>/dev/null)
+  TAILSCALE_IP=$(echo "$STATUS" | jq -r '.Self.TailscaleIPs[0] // empty' 2>/dev/null)
+  NETWORK_NAME=$(echo "$STATUS" | jq -r '.MagicDNSSuffix // empty' 2>/dev/null | sed 's/\.ts\.net$//')
+
+  # Determine icon based on state
+  if [ "$BACKEND_STATE" = "Running" ] && [ -n "$TAILSCALE_IP" ]; then
+    # Connected - using Unicode geometric shapes for a network-like icon
+    ICON="◉"
+    CLASS="connected"
+    
+    # Format tooltip
+    if [ -n "$NETWORK_NAME" ]; then
+      TOOLTIP="Tailscale: $TAILSCALE_IP\nNetwork: $NETWORK_NAME"
+    else
+      TOOLTIP="Tailscale: $TAILSCALE_IP"
+    fi
+  else
+    # Disconnected but service is running
+    ICON="○"  # Empty circle
+    CLASS="disconnected"
+    TOOLTIP="Tailscale: Disconnected"
+  fi
+
+  # Output JSON for waybar with Unicode icon
+  echo "{\"text\": \"$ICON\", \"class\": \"$CLASS\", \"tooltip\": \"$TOOLTIP\"}"
+}
+
+# Output initial status
+output_status
+
+# Monitor tailscale daemon bus events and output new status on changes
+# This provides a real-time event stream without polling
+tailscale debug daemon-bus-events 2>/dev/null | while read -r line; do
+  # Any event indicates a potential state change
+  # Output the new status
+  output_status
+done

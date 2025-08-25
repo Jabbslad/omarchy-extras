@@ -18,7 +18,7 @@ npm install -g @anthropic-ai/claude-code
 npm install -g @qwen-code/qwen-code
 npm install -g @openai/codex
 
-yay -S --noconfirm --needed cursor-bin zed-bin brave-bin ghostty starship proton-pass-bin python-terminaltexteffects
+yay -S --noconfirm --needed cursor-bin zed-bin brave-bin ghostty starship proton-pass-bin python-terminaltexteffects tailscale
 
 # update configs
 sed -i.bak 's/-- alacritty/-- ghostty/' $HOME/.config/hypr/bindings.conf
@@ -44,3 +44,25 @@ if [[ "$MODEL" == "L140PU" ]]; then
 else
   echo "[install] Not an L141PU (got: $MODEL). Skipping fan service."
 fi
+
+# Enable and start the Tailscale service
+sudo systemctl enable --now tailscaled.service
+
+cp omarchy-tailscale-monitor ~/.local/share/omarchy/bin/
+
+echo "Tailscale installed successfully."
+echo "To authenticate, run: sudo tailscale up"
+
+if ! grep -q "custom/tailscale" ~/.config/waybar/config.jsonc; then
+  # Add custom/tailscale to modules-right after network
+  sed -i '/"network",/a\    "custom/tailscale",' ~/.config/waybar/config.jsonc
+
+  # Add the Tailscale module configuration before the battery module
+  sed -i '/"battery": {/i\  "custom/tailscale": {\
+    "format": "{}",\
+    "exec": "~/.local/share/omarchy/bin/omarchy-tailscale-monitor",\
+    "return-type": "json"\
+  },' ~/.config/waybar/config.jsonc
+fi
+
+pkill -SIGUSR2 waybar
