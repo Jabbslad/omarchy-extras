@@ -49,6 +49,8 @@ if ! grep -q "custom/tailscale" ~/.config/waybar/config.jsonc; then
   # Add custom/tailscale to modules-right after network
   sed -i '/"network",/a\    "custom/tailscale",' ~/.config/waybar/config.jsonc
 
+  sed -i '/#custom-omarchy,/a\#custom-tailscale,' ~/.config/waybar/style.css
+
   # Add the Tailscale module configuration before the battery module
   sed -i '/"battery": {/i\  "custom/tailscale": {\
     "format": "{}",\
