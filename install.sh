@@ -26,7 +26,7 @@ sed -i.bak 's/GDK_SCALE,2/GDK_SCALE,1/' $HOME/.config/hypr/monitors.conf
 
 cp zig.lua $HOME/.config/nvim/lua/plugins/zig.lua
 
-omarchy-theme-install https://github.com/omacom-io/omarchy-synthwave84-theme.git
+#omarchy-theme-install https://github.com/omacom-io/omarchy-synthwave84-theme.git
 
 MODEL="$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo "")"
 
