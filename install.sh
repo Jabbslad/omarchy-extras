@@ -37,6 +37,68 @@ else
   echo "[install] Not an L141PU (got: $MODEL). Skipping fan service."
 fi
 
+if [[ "$MODEL" == "21F8CTO1WW" ]]; then
+  echo "[install] Detected T14S $MODEL, install ath11k_pci stability fix"
+
+  sudo tee /usr/local/sbin/bounce-ath11k.sh >/dev/null <<'EOF'
+#!/usr/bin/env bash
+set -u
+
+KVER="$(uname -r)"
+MODDIR="/lib/modules/$KVER/kernel/drivers/net/wireless/ath/ath11k"
+PCI_KO="$MODDIR/ath11k_pci.ko.zst"
+CORE_KO="$MODDIR/ath11k.ko.zst"
+
+# If the driver files for this kernel aren't present, do nothing.
+[[ -e "$PCI_KO" && -e "$CORE_KO" ]] || exit 0
+
+# Give udev/modules-load a moment on very fast boots.
+# (Keep short; this runs on every iwd start.)
+/usr/bin/udevadm settle || true
+
+# If either module is currently loaded, try to unload in correct order.
+if lsmod | grep -q '^ath11k_pci'; then
+  /usr/bin/modprobe -r ath11k_pci || true
+fi
+if lsmod | grep -q '^ath11k '; then
+  /usr/bin/modprobe -r ath11k || true
+fi
+
+# Wait up to ~2s for the modules to disappear completely.
+for _ in {1..20}; do
+  if ! lsmod | grep -qE '^(ath11k_pci|ath11k)'; then
+    break
+  fi
+  /usr/bin/sleep 0.1
+done
+
+# Small settle so firmware/PCI is happy.
+ /usr/bin/sleep 1
+
+# Re-insert; ignore failures so we never break iwd.
+# Load core first, then PCI shim.
+ /usr/bin/modprobe ath11k      || true
+ /usr/bin/modprobe ath11k_pci  || true
+
+exit 0
+EOF
+
+  sudo chmod +x /usr/local/sbin/bounce-ath11k.sh
+
+  sudo tee /etc/systemd/system/iwd.service.d/10-ath11k-bounce.conf >/dev/null <<'EOF'
+[Unit]
+After=systemd-modules-load.service systemd-udev-settle.service
+
+[Service]
+# Best-effort: even if this exits non-zero, iwd still starts
+ExecStartPre=-/usr/local/sbin/bounce-ath11k.sh
+EOF
+
+  sudo systemctl daemon-reload
+  sudo systemctl restart iwd.service
+
+fi
+
 # Enable and start the Tailscale service
 sudo systemctl enable --now tailscaled.service
 
