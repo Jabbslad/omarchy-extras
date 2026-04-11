@@ -16,7 +16,7 @@ The script is idempotent — safe to re-run.
 - **Touchpad:** natural scroll, clickfinger, no tap-to-click
 - **Nightlight:** auto warm screen at 20:00, daylight at 07:00
 - **Lock screen shortcut:** Super + Shift + L
-- **Battery:** PCI power management, NMI watchdog off, dirty writeback 15s
+- **Battery:** PCI power management, NMI watchdog off, dirty writeback 15s, PCIe ASPM powersupersave, Bluetooth off by default
 - **Tailscale:** install, set operator, enable systray
 
 ## Manual steps after install
@@ -36,9 +36,9 @@ These reset on reboot. Apply as needed:
 echo 240 | sudo tee /sys/class/backlight/intel_backlight/brightness
 ```
 
-**Disable Bluetooth:**
+**Re-enable Bluetooth** (disabled by default, re-enable when needed):
 ```bash
-rfkill block bluetooth
+rfkill unblock bluetooth
 ```
 
 **Disable Turbo Boost** (caps CPU at base clock, ~2.0 GHz):

@@ -36,6 +36,20 @@ sudo sysctl -q -w kernel.nmi_watchdog=0
 echo 'vm.dirty_writeback_centisecs=1500' | sudo tee /etc/sysctl.d/50-dirty-writeback.conf >/dev/null
 sudo sysctl -q -w vm.dirty_writeback_centisecs=1500
 
+# Disable Bluetooth by default - saves ~0.1-0.3W idle
+# Toggle back on when needed: rfkill unblock bluetooth
+sudo tee /etc/udev/rules.d/50-bluetooth-off.rules >/dev/null <<'EOF'
+ACTION=="add", SUBSYSTEM=="bluetooth", RUN+="/usr/bin/rfkill block bluetooth"
+EOF
+rfkill block bluetooth 2>/dev/null || true
+
+# PCIe ASPM powersupersave - enables L1.1/L1.2 substates for deeper PCIe link sleep
+# Drop-in config for limine-entry-tool (persists across kernel updates)
+echo 'KERNEL_CMDLINE[default]+=" pcie_aspm.policy=powersupersave"' | 
+  sudo tee /etc/limine-entry-tool.d/pcie-aspm.conf >/dev/null
+# Apply immediately without reboot
+echo powersupersave | sudo tee /sys/module/pcie_aspm/parameters/policy >/dev/null
+
 # --- Touchpad preferences ---
 sed -i \
   -e 's/# natural_scroll = true/natural_scroll = true/' \
