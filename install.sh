@@ -7,6 +7,9 @@ set -euo pipefail
 # --- Packages ---
 yay -S --noconfirm --needed zed-bin proton-pass-bin python-terminaltexteffects
 
+# Remove 1password-beta (installed by stock Omarchy)
+yay -Rns --noconfirm 1password-beta 2>/dev/null || true
+
 # --- Dev toolchains ---
 mise use -g node
 mise use -g rust
