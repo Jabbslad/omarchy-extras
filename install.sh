@@ -48,7 +48,8 @@ sudo systemctl disable --now bluetooth.service 2>/dev/null || true
 # Disable unnecessary services on a laptop without a printer
 sudo systemctl disable --now cups.service cups-browsed.service 2>/dev/null || true
 sudo systemctl disable --now avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
-sudo systemctl disable --now bolt.service 2>/dev/null || true
+# bolt.service is D-Bus activated - it starts on-demand when a Thunderbolt device is plugged in.
+# No need to disable it; just don't eagerly start it.
 
 # Disable turbo boost on battery - saves 0.3-0.8W under mixed workloads
 # Auto-managed by udev: turbo off on battery, on when plugged in
