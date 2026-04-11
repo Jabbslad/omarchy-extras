@@ -37,11 +37,30 @@ echo 'vm.dirty_writeback_centisecs=1500' | sudo tee /etc/sysctl.d/50-dirty-write
 sudo sysctl -q -w vm.dirty_writeback_centisecs=1500
 
 # Disable Bluetooth by default - saves ~0.1-0.3W idle
-# Toggle back on when needed: rfkill unblock bluetooth
+# Toggle back on when needed: rfkill unblock bluetooth && sudo systemctl start bluetooth
 sudo tee /etc/udev/rules.d/50-bluetooth-off.rules >/dev/null <<'EOF'
 ACTION=="add", SUBSYSTEM=="bluetooth", RUN+="/usr/bin/rfkill block bluetooth"
 EOF
 rfkill block bluetooth 2>/dev/null || true
+sudo systemctl disable --now bluetooth.service 2>/dev/null || true
+
+# Disable unnecessary services on a laptop without a printer
+sudo systemctl disable --now cups.service cups-browsed.service 2>/dev/null || true
+sudo systemctl disable --now avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
+sudo systemctl disable --now bolt.service 2>/dev/null || true
+
+# Disable turbo boost on battery - saves 0.3-0.8W under mixed workloads
+# Auto-managed by udev: turbo off on battery, on when plugged in
+sudo tee /etc/udev/rules.d/50-turbo-boost.rules >/dev/null <<'EOF'
+# Disable turbo on battery (fires on boot via "add" and on plug/unplug via "change")
+ACTION=="add|change", SUBSYSTEM=="power_supply", ATTR{type}=="Mains", ATTR{online}=="0", RUN+="/bin/sh -c 'echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo'"
+# Enable turbo on AC
+ACTION=="add|change", SUBSYSTEM=="power_supply", ATTR{type}=="Mains", ATTR{online}=="1", RUN+="/bin/sh -c 'echo 0 > /sys/devices/system/cpu/intel_pstate/no_turbo'"
+EOF
+# Apply now if on battery
+if [ "$(cat /sys/class/power_supply/AC0/online 2>/dev/null || echo 1)" = "0" ]; then
+  echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo >/dev/null
+fi
 
 # PCIe ASPM powersupersave - enables L1.1/L1.2 substates for deeper PCIe link sleep
 # Drop-in config for limine-entry-tool (persists across kernel updates)
@@ -54,6 +73,11 @@ echo powersupersave | sudo tee /sys/module/pcie_aspm/parameters/policy >/dev/nul
 # Limit to states with ≤5.5ms wake-up latency
 echo 'KERNEL_CMDLINE[default]+=" nvme_core.default_ps_max_latency_us=5500"' |
   sudo tee /etc/limine-entry-tool.d/nvme-apst.conf >/dev/null
+
+# Disable Intel VMD - allows NVMe to use runtime PM (suspend when idle)
+# VMD blocks NVMe runtime suspend, wasting ~0.5-1W
+echo 'KERNEL_CMDLINE[default]+=" vmd.enable=0"' |
+  sudo tee /etc/limine-entry-tool.d/vmd-disable.conf >/dev/null
 # Apply immediately without reboot
 echo 5500 | sudo tee /sys/class/nvme/nvme0/power/pm_qos_latency_tolerance_us >/dev/null
 
