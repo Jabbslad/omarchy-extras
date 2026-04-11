@@ -89,43 +89,6 @@ echo 5500 | sudo tee /sys/class/nvme/nvme0/power/pm_qos_latency_tolerance_us >/d
 # Rebuild boot entry so kernel cmdline picks up the limine-entry-tool drop-ins
 sudo limine-update
 
-# Persist power profile across reboots - restore last user-chosen profile on boot
-sudo tee /usr/local/bin/power-profile-restore >/dev/null <<'SCRIPT'
-#!/bin/bash
-if [ -f /var/lib/power-profile ]; then
-  powerprofilesctl set "$(cat /var/lib/power-profile)"
-fi
-SCRIPT
-sudo chmod +x /usr/local/bin/power-profile-restore
-
-sudo tee /usr/local/bin/power-profile-save >/dev/null <<'SCRIPT'
-#!/bin/bash
-powerprofilesctl set "$1"
-echo "$1" > /var/lib/power-profile
-SCRIPT
-sudo chmod +x /usr/local/bin/power-profile-save
-
-sudo tee /etc/systemd/system/power-profile-restore.service >/dev/null <<'UNIT'
-[Unit]
-Description=Restore last power profile
-After=power-profiles-daemon.service
-Requires=power-profiles-daemon.service
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/power-profile-restore
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-sudo systemctl daemon-reload
-sudo systemctl enable power-profile-restore.service
-
-# Save current profile if not already saved
-if [ ! -f /var/lib/power-profile ]; then
-  powerprofilesctl get > /var/lib/power-profile
-fi
-
 # Fix /boot permissions - world-accessible random seed is a security hole
 # chmod doesn't stick on FAT32; must use fstab mount options instead
 sudo sed -i 's/fmask=0022,dmask=0022/fmask=0077,dmask=0077/' /etc/fstab
