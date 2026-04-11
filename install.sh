@@ -2,22 +2,23 @@
 set -euo pipefail
 
 # Extra setup for ASUS Zenbook 14 on top of stock Omarchy.
-# Run after a fresh Omarchy install.
+# Safe to re-run — all sections are idempotent.
 
 # --- Packages ---
 yay -S --noconfirm --needed zed-bin proton-pass-bin python-terminaltexteffects
 
 # Remove 1password-beta (installed by stock Omarchy)
-yay -Rns --noconfirm 1password-beta 2>/dev/null || true
+if pacman -Qi 1password-beta &>/dev/null; then
+  yay -Rns --noconfirm 1password-beta
+fi
 
 # --- Dev toolchains ---
 mise use -g node
 mise use -g rust
-mise cache clear
 mise reshim
 
 # --- npm globals ---
-npm install -g @anthropic-ai/claude-code
+npm ls -g @anthropic-ai/claude-code &>/dev/null || npm install -g @anthropic-ai/claude-code
 
 # --- Battery optimisations (Zenbook 14 UX3405CA) ---
 # See: https://gist.github.com/jabbslad/e65ad403f5c3ebe3ca739d9e228245a0
@@ -64,7 +65,7 @@ fi
 
 # PCIe ASPM powersupersave - enables L1.1/L1.2 substates for deeper PCIe link sleep
 # Drop-in config for limine-entry-tool (persists across kernel updates)
-echo 'KERNEL_CMDLINE[default]+=" pcie_aspm.policy=powersupersave"' | 
+echo 'KERNEL_CMDLINE[default]+=" pcie_aspm.policy=powersupersave"' |
   sudo tee /etc/limine-entry-tool.d/pcie-aspm.conf >/dev/null
 # Apply immediately without reboot
 echo powersupersave | sudo tee /sys/module/pcie_aspm/parameters/policy >/dev/null
@@ -78,6 +79,7 @@ echo 'KERNEL_CMDLINE[default]+=" nvme_core.default_ps_max_latency_us=5500"' |
 # VMD blocks NVMe runtime suspend, wasting ~0.5-1W
 echo 'KERNEL_CMDLINE[default]+=" vmd.enable=0"' |
   sudo tee /etc/limine-entry-tool.d/vmd-disable.conf >/dev/null
+
 # Apply immediately without reboot
 echo 5500 | sudo tee /sys/class/nvme/nvme0/power/pm_qos_latency_tolerance_us >/dev/null
 
@@ -121,6 +123,8 @@ grep -q "uwsm app -- hyprsunset" ~/.config/hypr/autostart.conf 2>/dev/null || \
 # that causes Hyprland coredumps on every session shutdown.
 # Before= reset in drop-ins doesn't work in systemd 260, so we use
 # full unit overrides instead.
+
+mkdir -p ~/.config/systemd/user
 
 # envelope: remove After=wayland-session-shutdown.target
 cat > ~/.config/systemd/user/wayland-session-envelope@.target <<'UNIT'
@@ -175,6 +179,8 @@ if ! command -v tailscale &>/dev/null; then
   omarchy-install-tailscale
 fi
 sudo tailscale set --operator=$USER
-tailscale configure systray --enable-startup=systemd
+if ! systemctl --user is-enabled tailscale-systray &>/dev/null; then
+  tailscale configure systray --enable-startup=systemd
+fi
 systemctl --user daemon-reload
 systemctl --user enable --now tailscale-systray
