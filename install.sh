@@ -77,14 +77,19 @@ echo 'KERNEL_CMDLINE[default]+=" nvme_core.default_ps_max_latency_us=5500"' |
 
 # Disable Intel VMD - allows NVMe to use runtime PM (suspend when idle)
 # VMD blocks NVMe runtime suspend, wasting ~0.5-1W
-echo 'KERNEL_CMDLINE[default]+=" vmd.enable=0"' |
-  sudo tee /etc/limine-entry-tool.d/vmd-disable.conf >/dev/null
+# Blacklist the module so NVMe attaches directly to PCIe bus
+echo 'blacklist vmd' | sudo tee /etc/modprobe.d/vmd.conf >/dev/null
+# Remove the old broken kernel param if present
+sudo rm -f /etc/limine-entry-tool.d/vmd-disable.conf
 
-# Apply immediately without reboot
+# Apply NVMe latency cap immediately without reboot
 echo 5500 | sudo tee /sys/class/nvme/nvme0/power/pm_qos_latency_tolerance_us >/dev/null
 
 # Rebuild boot entry so kernel cmdline picks up the limine-entry-tool drop-ins
 sudo limine-update
+
+# Fix /boot permissions - world-accessible random seed is a security hole
+sudo chmod 700 /boot
 
 # --- Touchpad preferences ---
 sed -i \
@@ -182,5 +187,7 @@ sudo tailscale set --operator=$USER
 if ! systemctl --user is-enabled tailscale-systray &>/dev/null; then
   tailscale configure systray --enable-startup=systemd
 fi
+# Fix executable bit warning on tailscale-systray service
+chmod -x ~/.config/systemd/user/tailscale-systray.service 2>/dev/null || true
 systemctl --user daemon-reload
 systemctl --user enable --now tailscale-systray
