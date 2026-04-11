@@ -50,6 +50,11 @@ echo 'KERNEL_CMDLINE[default]+=" pcie_aspm.policy=powersupersave"' |
 # Apply immediately without reboot
 echo powersupersave | sudo tee /sys/module/pcie_aspm/parameters/policy >/dev/null
 
+# NVMe APST fix - Micron 2500 (DRAM-less) enters deep power states that cause I/O timeouts
+# Limit to states with ≤5.5ms wake-up latency
+echo 'KERNEL_CMDLINE[default]+=" nvme_core.default_ps_max_latency_us=5500"' |
+  sudo tee /etc/limine-entry-tool.d/nvme-apst.conf >/dev/null
+
 # --- Touchpad preferences ---
 sed -i \
   -e 's/# natural_scroll = true/natural_scroll = true/' \
@@ -81,6 +86,19 @@ EOF
 
 grep -q "uwsm app -- hyprsunset" ~/.config/hypr/autostart.conf 2>/dev/null || \
   echo "exec-once = uwsm app -- hyprsunset" >> ~/.config/hypr/autostart.conf
+
+# --- uwsm session shutdown cycle fix ---
+# Breaks a stop ordering cycle: envelope→wm-env→shutdown→envelope
+# that causes Hyprland coredumps on every session shutdown
+mkdir -p ~/.config/systemd/user/wayland-wm-env@.service.d
+cat > ~/.config/systemd/user/wayland-wm-env@.service.d/fix-cycle.conf <<'EOF'
+[Unit]
+Before=
+Before=wayland-session-pre@%i.target graphical-session-pre.target
+EOF
+# Clean up old ineffective fix attempt on envelope target
+rm -f ~/.config/systemd/user/wayland-session-envelope@.target.d/fix-cycle.conf
+rmdir ~/.config/systemd/user/wayland-session-envelope@.target.d 2>/dev/null || true
 
 # --- Tailscale ---
 if ! command -v tailscale &>/dev/null; then
