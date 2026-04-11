@@ -77,10 +77,11 @@ echo 'KERNEL_CMDLINE[default]+=" nvme_core.default_ps_max_latency_us=5500"' |
 
 # Disable Intel VMD - allows NVMe to use runtime PM (suspend when idle)
 # VMD blocks NVMe runtime suspend, wasting ~0.5-1W
-# Blacklist the module so NVMe attaches directly to PCIe bus
-echo 'blacklist vmd' | sudo tee /etc/modprobe.d/vmd.conf >/dev/null
-# Remove the old broken kernel param if present
-sudo rm -f /etc/limine-entry-tool.d/vmd-disable.conf
+# Use kernel param (not module blacklist - blacklisting breaks boot on NVMe root)
+echo 'KERNEL_CMDLINE[default]+=" vmd.enable=0"' |
+  sudo tee /etc/limine-entry-tool.d/vmd-disable.conf >/dev/null
+# Clean up old blacklist approach if present
+sudo rm -f /etc/modprobe.d/vmd.conf
 
 # Apply NVMe latency cap immediately without reboot
 echo 5500 | sudo tee /sys/class/nvme/nvme0/power/pm_qos_latency_tolerance_us >/dev/null
