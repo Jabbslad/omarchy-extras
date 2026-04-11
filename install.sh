@@ -54,6 +54,11 @@ echo powersupersave | sudo tee /sys/module/pcie_aspm/parameters/policy >/dev/nul
 # Limit to states with ≤5.5ms wake-up latency
 echo 'KERNEL_CMDLINE[default]+=" nvme_core.default_ps_max_latency_us=5500"' |
   sudo tee /etc/limine-entry-tool.d/nvme-apst.conf >/dev/null
+# Apply immediately without reboot
+echo 5500 | sudo tee /sys/class/nvme/nvme0/power/pm_qos_latency_tolerance_us >/dev/null
+
+# Rebuild boot entry so kernel cmdline picks up the limine-entry-tool drop-ins
+sudo limine-update
 
 # --- Touchpad preferences ---
 sed -i \
