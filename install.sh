@@ -79,11 +79,52 @@ echo 'KERNEL_CMDLINE[default]+=" nvme_core.default_ps_max_latency_us=5500"' |
 # Disable VMD in BIOS/UEFI if the option exists. Clean up old attempts.
 sudo rm -f /etc/modprobe.d/vmd.conf /etc/limine-entry-tool.d/vmd-disable.conf
 
+# Remove blanket USB autosuspend disable - wastes power on any plugged USB device.
+# Individual devices that misbehave should get targeted udev rules instead.
+sudo rm -f /etc/modprobe.d/disable-usb-autosuspend.conf
+
 # Apply NVMe latency cap immediately without reboot
 echo 5500 | sudo tee /sys/class/nvme/nvme0/power/pm_qos_latency_tolerance_us >/dev/null
 
 # Rebuild boot entry so kernel cmdline picks up the limine-entry-tool drop-ins
 sudo limine-update
+
+# Persist power profile across reboots - restore last user-chosen profile on boot
+sudo tee /usr/local/bin/power-profile-restore >/dev/null <<'SCRIPT'
+#!/bin/bash
+if [ -f /var/lib/power-profile ]; then
+  powerprofilesctl set "$(cat /var/lib/power-profile)"
+fi
+SCRIPT
+sudo chmod +x /usr/local/bin/power-profile-restore
+
+sudo tee /usr/local/bin/power-profile-save >/dev/null <<'SCRIPT'
+#!/bin/bash
+powerprofilesctl set "$1"
+echo "$1" > /var/lib/power-profile
+SCRIPT
+sudo chmod +x /usr/local/bin/power-profile-save
+
+sudo tee /etc/systemd/system/power-profile-restore.service >/dev/null <<'UNIT'
+[Unit]
+Description=Restore last power profile
+After=power-profiles-daemon.service
+Requires=power-profiles-daemon.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/power-profile-restore
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl daemon-reload
+sudo systemctl enable power-profile-restore.service
+
+# Save current profile if not already saved
+if [ ! -f /var/lib/power-profile ]; then
+  powerprofilesctl get > /var/lib/power-profile
+fi
 
 # Fix /boot permissions - world-accessible random seed is a security hole
 # chmod doesn't stick on FAT32; must use fstab mount options instead
