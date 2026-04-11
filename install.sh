@@ -86,7 +86,8 @@ echo 5500 | sudo tee /sys/class/nvme/nvme0/power/pm_qos_latency_tolerance_us >/d
 sudo limine-update
 
 # Fix /boot permissions - world-accessible random seed is a security hole
-sudo chmod 700 /boot
+# chmod doesn't stick on FAT32; must use fstab mount options instead
+sudo sed -i 's/fmask=0022,dmask=0022/fmask=0077,dmask=0077/' /etc/fstab
 
 # --- Touchpad preferences ---
 sed -i \
