@@ -88,17 +88,58 @@ grep -q "uwsm app -- hyprsunset" ~/.config/hypr/autostart.conf 2>/dev/null || \
   echo "exec-once = uwsm app -- hyprsunset" >> ~/.config/hypr/autostart.conf
 
 # --- uwsm session shutdown cycle fix ---
-# Breaks a stop ordering cycle: envelope→wm-env→shutdown→envelope
-# that causes Hyprland coredumps on every session shutdown
-mkdir -p ~/.config/systemd/user/wayland-wm-env@.service.d
-cat > ~/.config/systemd/user/wayland-wm-env@.service.d/fix-cycle.conf <<'EOF'
+# Breaks a stop ordering cycle: envelope→shutdown→wm@→envelope
+# that causes Hyprland coredumps on every session shutdown.
+# Before= reset in drop-ins doesn't work in systemd 260, so we use
+# full unit overrides instead.
+
+# envelope: remove After=wayland-session-shutdown.target
+cat > ~/.config/systemd/user/wayland-session-envelope@.target <<'UNIT'
 [Unit]
-Before=
+Description=Session envelope of %I Wayland compositor
+Documentation=man:uwsm(1) man:systemd.special(7)
+BindsTo=wayland-wm-env@%i.service wayland-wm@%i.service
+Before=wayland-wm-env@%i.service wayland-wm@%i.service
+PropagatesStopTo=wayland-wm@%i.service
+Conflicts=wayland-session-shutdown.target
+# Removed: After=wayland-session-shutdown.target (causes stop ordering cycle)
+StopWhenUnneeded=yes
+UNIT
+
+# wm-env: remove Before=wayland-session-shutdown.target
+cat > ~/.config/systemd/user/wayland-wm-env@.service <<'UNIT'
+[Unit]
+Description=Environment preloader for %I
+Documentation=man:uwsm(1)
+BindsTo=wayland-session-pre@%i.target
 Before=wayland-session-pre@%i.target graphical-session-pre.target
-EOF
-# Clean up old ineffective fix attempt on envelope target
-rm -f ~/.config/systemd/user/wayland-session-envelope@.target.d/fix-cycle.conf
-rmdir ~/.config/systemd/user/wayland-session-envelope@.target.d 2>/dev/null || true
+PropagatesStopTo=wayland-session-pre@%i.target
+Wants=wayland-session-envelope@%i.target
+OnSuccess=wayland-session-shutdown.target
+OnSuccessJobMode=replace-irreversibly
+OnFailure=wayland-session-shutdown.target
+OnFailureJobMode=replace-irreversibly
+Conflicts=wayland-session-shutdown.target
+# Removed: Before=wayland-session-shutdown.target (causes stop ordering cycle)
+RefuseManualStart=yes
+RefuseManualStop=yes
+StopWhenUnneeded=yes
+CollectMode=inactive-or-failed
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/uwsm aux prepare-env -- "%I"
+ExecStopPost=/usr/bin/uwsm aux cleanup-env
+Restart=no
+EnvironmentFile=-%t/uwsm/env_session.conf
+SyslogIdentifier=uwsm_env-preloader
+Slice=session.slice
+UNIT
+
+# Clean up old ineffective drop-in attempts
+rm -rf ~/.config/systemd/user/wayland-session-envelope@.target.d
+rm -rf ~/.config/systemd/user/wayland-session-envelope@hyprland.desktop.target.d
+rm -rf ~/.config/systemd/user/wayland-wm-env@.service.d
 
 # --- Tailscale ---
 if ! command -v tailscale &>/dev/null; then
