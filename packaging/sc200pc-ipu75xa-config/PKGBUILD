@@ -16,8 +16,10 @@ source=(
   'sc200pc-uf.json'
   'SC200PC_KAFC917_PTL.aiqb'
   'SC200PC_KAFC917.IPU75XA.bin'
+  'sc200pc-hal-check'
 )
 sha256sums=(
+  'SKIP'
   'SKIP'
   'SKIP'
   'SKIP'
@@ -35,6 +37,9 @@ package() {
 
   install -m644 "${srcdir}/SC200PC_KAFC917.IPU75XA.bin" \
     "${pkgdir}/etc/camera/ipu75xa/gcss/SC200PC_KAFC917.IPU75XA.bin"
+
+  install -Dm755 "${srcdir}/sc200pc-hal-check" \
+    "${pkgdir}/usr/bin/sc200pc-hal-check"
 
   install -Dm644 "${srcdir}/README.md" \
     "${pkgdir}/usr/share/doc/${pkgname}/README.md"

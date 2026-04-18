@@ -54,6 +54,8 @@ post_install() {
     echo ">>>   /etc/v4l2-relayd.d/ipu7.conf"
     echo ">>>   /etc/systemd/system/v4l2-relayd@ipu7.service.d/override.conf"
     echo ">>> The HAL path is still experimental and currently graph-blocked."
+    echo ">>> Active graph strategy is controlled by /etc/camera/ipu75xa/sensors/sc200pc-uf.json."
+    echo ">>> Use sc200pc-hal-check to inspect the selected graph, sensor registration, and recent HAL logs."
     echo ">>> If you want to inspect it anyway, restart it with:"
     echo ">>>   sudo systemctl enable --now v4l2-relayd@ipu7"
     echo ">>>   systemctl --user restart wireplumber pipewire"
@@ -62,6 +64,7 @@ post_install() {
 post_upgrade() {
     _add_entry
     echo ">>> Refreshed SC200PC HAL assets."
+    echo ">>> Use sc200pc-hal-check to confirm the selected graph file and inspect recent HAL logs."
     echo ">>> The HAL path remains experimental; restart services only if you are inspecting it:"
     echo ">>>   sudo systemctl restart v4l2-relayd@ipu7"
     echo ">>>   systemctl --user restart wireplumber pipewire"

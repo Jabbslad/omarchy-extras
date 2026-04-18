@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_JSON=/etc/camera/ipu75xa/sensors/sc200pc-uf.json
+HAL_CONFIGS=/etc/camera/ipu75xa/libcamhal_configs.json
+AIQB=/etc/camera/ipu75xa/SC200PC_KAFC917_PTL.aiqb
+SC200PC_GRAPH=/etc/camera/ipu75xa/gcss/SC200PC_KAFC917.IPU75XA.bin
+
+have() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+json_value() {
+    local expr=$1
+    python3 - "$CONFIG_JSON" "$expr" <<'PY'
+import json, re, sys
+path, expr = sys.argv[1], sys.argv[2]
+with open(path, "r", encoding="utf-8") as fh:
+    text = fh.read()
+
+# Intel's sensor JSON files are JSON-with-comments. Strip line comments
+# and trailing commas before feeding them to the stdlib parser.
+text = re.sub(r'//.*', '', text)
+text = re.sub(r',(\s*[\]}])', r'\1', text)
+data = json.loads(text)
+sensor = data["CameraSettings"]["Sensor"][0]
+
+def get(expr):
+    cur = sensor
+    for part in expr.split("."):
+        if part.endswith("]"):
+            name, idx = part[:-1].split("[", 1)
+            if name:
+                cur = cur[name]
+            cur = cur[int(idx)]
+        else:
+            cur = cur[part]
+    return cur
+
+value = get(expr)
+if isinstance(value, list):
+    print(json.dumps(value))
+else:
+    print(value)
+PY
+}
+
+echo "==> SC200PC HAL diagnostic"
+echo
+
+echo "==> Asset registration"
+[[ -f "$CONFIG_JSON" ]] && echo "found $CONFIG_JSON" || echo "missing $CONFIG_JSON"
+[[ -f "$AIQB" ]] && echo "found $AIQB" || echo "missing $AIQB"
+[[ -f "$SC200PC_GRAPH" ]] && echo "found $SC200PC_GRAPH (reference-only unless selected in JSON)" || echo "missing $SC200PC_GRAPH"
+
+if [[ -f "$HAL_CONFIGS" ]]; then
+    if grep -q '"sc200pc-uf-0"' "$HAL_CONFIGS"; then
+        echo "sc200pc-uf-0 registered in $HAL_CONFIGS"
+    else
+        echo "WARNING: sc200pc-uf-0 not registered in $HAL_CONFIGS"
+    fi
+else
+    echo "WARNING: missing $HAL_CONFIGS"
+fi
+
+echo
+echo "==> Runtime HAL configuration"
+if [[ -f "$CONFIG_JSON" ]]; then
+    graph_file=$(json_value "graphSettingsFile")
+    graph_type=$(json_value "graphSettingsType")
+    tuning=$(json_value "supportedTuningConfig[0]")
+    raw_format=$(json_value "iSysRawFormat")
+    isys_size=$(json_value "supportedISysSizes")
+
+    echo "graphSettingsFile: $graph_file"
+    echo "graphSettingsType: $graph_type"
+    echo "supportedTuningConfig[0]: $tuning"
+    echo "iSysRawFormat: $raw_format"
+    echo "supportedISysSizes: $isys_size"
+
+    selected_graph="/etc/camera/ipu75xa/gcss/$graph_file"
+    if [[ -f "$selected_graph" ]]; then
+        echo "selected graph exists: $selected_graph"
+    else
+        echo "WARNING: selected graph missing: $selected_graph"
+    fi
+
+    if [[ "$graph_file" == IMX471_BBG803N3.IPU75XA.bin ]]; then
+        echo "graph strategy: using IMX471 Linux-compatible graph as the active HAL graph"
+    elif [[ "$graph_file" == SC200PC_KAFC917.IPU75XA.bin ]]; then
+        echo "graph strategy: using SC200PC graph directly"
+    else
+        echo "graph strategy: custom/unknown graph selection"
+    fi
+fi
+
+echo
+echo "==> Kernel/media graph"
+if have media-ctl; then
+    if media-ctl -p 2>/dev/null | grep -qi 'sc200pc'; then
+        echo "media graph contains sc200pc"
+    else
+        echo "WARNING: media graph does not currently show sc200pc"
+    fi
+else
+    echo "media-ctl not installed"
+fi
+
+echo
+echo "==> HAL services"
+if have systemctl; then
+    systemctl --no-pager --full status v4l2-relayd@ipu7 2>/dev/null | sed -n '1,12p' || \
+        echo "v4l2-relayd@ipu7 status unavailable"
+fi
+
+echo
+echo "==> PipeWire state"
+if have wpctl; then
+    wpctl status 2>/dev/null | sed -n '/Video/,$p' | sed -n '1,30p' || \
+        echo "PipeWire status unavailable from this session"
+else
+    echo "wpctl not installed"
+fi
+
+echo
+echo "==> Recent HAL log hints"
+if have journalctl; then
+    journalctl -b --no-pager -n 200 | \
+        grep -Ei 'GraphConfig|PipeManager|libcamhal|ipu7|relayd|sc200pc' | \
+        tail -n 30 || echo "no recent HAL-related log lines found"
+else
+    echo "journalctl not available"
+fi
+
+echo
+echo "==> Recommended next check"
+echo "1. Ensure v4l2-relayd@ipu7 is running"
+echo "2. Confirm graphSettingsFile above matches the intended strategy"
+echo "3. Inspect the recent HAL log hints for GraphConfig / PipeManager failures"
+echo
+echo "==> Known blocker summary"
+echo "The working Linux-readable IMX471 graph expects an internal raw input"
+echo "of 2328x1748 GRBG10, while SC200PC currently exposes 1928x1088 BGGR10."
+echo "The Windows SC200PC graph blob is not readable by the Linux HAL graph loader."
+echo "So the remaining HAL blocker is a graph/HAL compatibility gap, not"
+echo "sensor registration, AIQB loading, or the startup V4L2 controls."
