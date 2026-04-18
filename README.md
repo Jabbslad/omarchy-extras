@@ -39,7 +39,9 @@ The script is idempotent — safe to re-run. Model-specific fixes are gated by D
     `SSLC2000`
   - `packaging/sc200pc-dkms/` — DKMS sc200pc V4L2 sensor driver; its
     141-entry init table was reverse-engineered from the OEM Windows
-    `sc200pc.sys` binary
+    `sc200pc.sys` binary. Now exposes proper V4L2 timing controls
+    (HBLANK, VBLANK, pixel_rate, digital_gain) required by the vendor
+    HAL's 3A and PSYS pipeline
   - `packaging/sc200pc-ipu75xa-config/` — vendor HAL assets / config
     for HAL experiments
 - **Native libcamera path is the only working browser path today.**
@@ -62,18 +64,21 @@ The script is idempotent — safe to re-run. Model-specific fixes are gated by D
   IPA YAML remains a first-pass approximation rather than measured
   calibration. Treat the native path as functional but not production
   quality yet.
-- **Vendor HAL path is still research-only.**
+- **Vendor HAL path is blocked on Intel tooling.**
   [packaging/sc200pc-ipu75xa-config/](/home/jabbslad/dev/omarchy-extras/packaging/sc200pc-ipu75xa-config)
   carries the Windows-derived AIQB / graph assets, and
   [packaging/intel-ipu7-camera-sc200pc/](/home/jabbslad/dev/omarchy-extras/packaging/intel-ipu7-camera-sc200pc)
-  now carries the non-trivial HAL patches needed to get past the old
-  graph/input-edge failures. As of April 18, 2026, the patched HAL can
-  power the sensor on and negotiate live `NV12 1920x1080` caps through
-  `icamerasrc`, but it still does not deliver frames: the current stall
-  is in sensor timing / 3A / PSYS task startup, with errors including
-  `failed to get llp`, `Get sensor info failed`, `run 3A failed`, and
-  `PSysDevice: Failed to add task No data available`. Treat the vendor
-  HAL path as active research, not a working camera stack.
+  carries patches (0001–0005) that fix pipeline construction. As of
+  April 18, 2026, the patched HAL successfully loads the Windows graph
+  binary, runs 3A, and constructs the PSYS pipeline. The blocker is a
+  per-graph hash mismatch: the Windows graph binary's autogen data
+  layout (hash `0xE7F37F28`) is incompatible with the Linux HAL's
+  compiled layout (hash `0x246C440B`). The IMX471 graph has a matching
+  1920×1080 resolution but its topology format descriptors also differ.
+  Resolving this requires Intel to generate a Linux-native graph binary
+  using their proprietary graphspec compiler. A response to
+  [intel/ipu7-drivers#62](https://github.com/user/intel/ipu7-drivers/issues/62)
+  with our driver and findings would be valuable to move this forward.
 - Apps that read raw V4L2 directly (opencv, custom gstreamer pipelines
   with `videoconvert`/`bayer2rgb`) can use `/dev/video0` today. Native
   `libcamera` consumers can also be used for diagnostics, but should not
