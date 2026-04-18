@@ -111,41 +111,16 @@ if is_galaxybook6_pro; then
     sed -i '/kb_layout/a\  kb_options =' ~/.config/hypr/input.conf
   fi
 
-  # Camera support stays package-driven, but two userspace fixes are safe
-  # to apply automatically on this model:
-  # 1. Remove HAL-only WirePlumber overrides that disable libcamera and
-  #    hide the IPU7 node from PipeWire.
-  # 2. Restore user access to the raw IPU7 ISYS node for the native
-  #    libcamera/PipeWire path.
-  sudo rm -f \
-    /etc/wireplumber/wireplumber.conf.d/10-disable-libcamera.conf \
-    /etc/wireplumber/wireplumber.conf.d/60-hide-ipu7-v4l2.conf
-
-  if [[ -f packaging/sc200pc-libcamera-pipewire/72-ipu7-native-isys.rules ]]; then
-    sudo install -Dm644 \
-      packaging/sc200pc-libcamera-pipewire/72-ipu7-native-isys.rules \
-      /etc/udev/rules.d/72-ipu7-native-isys.rules
-    sudo udevadm control --reload
-    sudo udevadm trigger --subsystem-match=video4linux
+  # Camera enablement (SC200PC sensor + IPU7) lives in its own repo.
+  # Clone or update it under ~/dev and run its installer.
+  CAMERA_REPO_DIR="${HOME}/dev/sc200pc-linux"
+  if [[ ! -d "${CAMERA_REPO_DIR}/.git" ]]; then
+    mkdir -p "${HOME}/dev"
+    git clone https://github.com/jabbslad/sc200pc-linux "${CAMERA_REPO_DIR}"
+  else
+    git -C "${CAMERA_REPO_DIR}" pull --ff-only
   fi
-
-  sudo systemctl stop v4l2-relayd@ipu7 2>/dev/null || true
-  systemctl --user restart wireplumber pipewire xdg-desktop-portal \
-    xdg-desktop-portal-hyprland 2>/dev/null || true
-
-  # Current status (2026-04-18):
-  # - kernel path: WORKS. ipu-bridge-sslc2000 + sc200pc-dkms together
-  #   capture real 1928x1088 raw10 BGGR frames on /dev/video0.
-  # - native libcamera path: WORKS for Chromium/qcam/PipeWire once the
-  #   IPU7 node permissions are restored and the HAL-only WirePlumber
-  #   overrides are gone.
-  # - stock libcamera still lacks the SC200PC CameraSensorHelper, so AGC
-  #   cannot converge (dark, green-tinted frames). Fix by running
-  #   `rebuild-libcamera-with-sc200pc-support` from
-  #   sc200pc-libcamera-pipewire; it applies patches/libcamera-sc200pc.patch
-  #   to the Arch libcamera PKGBUILD and reinstalls. The patch is small
-  #   and intended for upstream.
-  # - vendor HAL path remains blocked in GraphConfig / PipeManager.
+  bash "${CAMERA_REPO_DIR}/install.sh"
 fi
 
 # Rebuild boot entry so kernel cmdline picks up the limine-entry-tool drop-ins

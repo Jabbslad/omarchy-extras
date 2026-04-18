@@ -31,72 +31,24 @@ The script is idempotent — safe to re-run. Model-specific fixes are gated by D
 
 ### Galaxy Book6 Pro NP940XJG-KGDUK only
 
-- **Kernel path works end-to-end.** `v4l2-ctl --stream-mmap` on
-  `/dev/video0` captures real 4 247 552-byte Bayer BGGR raw10 frames
-  (1928×1088 @ 30 fps). Three packages supply this:
-  - `packaging/ipu-bridge-sslc2000/` — DKMS module replacing the
-    in-tree `ipu-bridge.ko` with one that recognises ACPI HID
-    `SSLC2000`
-  - `packaging/sc200pc-dkms/` — DKMS sc200pc V4L2 sensor driver; its
-    141-entry init table was reverse-engineered from the OEM Windows
-    `sc200pc.sys` binary. Now exposes proper V4L2 timing controls
-    (HBLANK, VBLANK, pixel_rate, digital_gain) required by the vendor
-    HAL's 3A and PSYS pipeline
-  - `packaging/sc200pc-ipu75xa-config/` — vendor HAL assets / config
-    for HAL experiments
-- **Native libcamera path is the only working browser path today.**
-  `cam`, `qcam`, `pipewire-libcamera`, and Chromium can all see the
-  camera through the native path. Stock libcamera has no `CameraSensorHelper`
-  for `sc200pc`, so AGC treats the raw V4L2 gain code as a linear gain
-  multiplier and converges at effectively 1.0×; the symptom is dark,
-  green-tinted frames. `packaging/sc200pc-libcamera-pipewire/` now ships
-  a udev override for `Intel IPU7 ISYS Capture *` so the native path can
-  access `/dev/video0` even though `intel-ipu7-camera` hides it by
-  default for the vendor HAL workflow, and it also ships
-  `rebuild-libcamera-with-sc200pc-support`, which applies
-  [patches/libcamera-sc200pc.patch](/home/jabbslad/dev/omarchy-extras/patches/libcamera-sc200pc.patch)
-  to the Arch `libcamera` PKGBUILD (adds `CameraSensorHelperSc200pc`
-  with `gain = code / 16`, black level 64-at-10-bit, and a matching
-  `CameraSensorProperties` entry) and reinstalls. After that, AGC
-  converges and the browser path works, but image quality is still
-  clearly unfinished: indoor scenes are low-saturation with an olive /
-  monochrome cast, exposure tuning is still hand-tuned, and the simple
-  IPA YAML remains a first-pass approximation rather than measured
-  calibration. Treat the native path as functional but not production
-  quality yet.
-- **Vendor HAL path is blocked on Intel tooling.**
-  [packaging/sc200pc-ipu75xa-config/](/home/jabbslad/dev/omarchy-extras/packaging/sc200pc-ipu75xa-config)
-  carries the Windows-derived AIQB / graph assets, and
-  [packaging/intel-ipu7-camera-sc200pc/](/home/jabbslad/dev/omarchy-extras/packaging/intel-ipu7-camera-sc200pc)
-  carries patches (0001–0005) that fix pipeline construction. The
-  investigation achieved GRAPH_OPEN SUCCESS with the Windows graph
-  binary, decoded its container format, and got DOL link deactivation
-  working. The `GraphConfiguration100032` struct size (6244 bytes) and
-  container header layout are confirmed compatible between the Windows
-  binary and the Linux HAL. The remaining blocker is that the CCA/PAC
-  proprietary library needs a matched triplet — graph binary, autogen
-  C++ code, and AIQB — generated together by Intel's graphspec
-  compiler. The Windows graph binary's per-graph topology hash
-  (`0xE7F37F28`) differs from the Linux HAL's compiled layout
-  (`0x246C440B`), causing the CCA to produce empty ISP parameter
-  buffers. Resolving this requires Intel to generate a Linux-native
-  graph binary. Tracked in
-  [intel/ipu7-drivers#62](https://github.com/intel/ipu7-drivers/issues/62).
-- Apps that read raw V4L2 directly (opencv, custom gstreamer pipelines
-  with `videoconvert`/`bayer2rgb`) can use `/dev/video0` today. Native
-  `libcamera` consumers can also be used for diagnostics, but should not
-  be expected to produce good image quality yet.
-- `install.sh` does not yet pull these packages in automatically;
-  install them manually on the target machine while the stack is being
-  stabilized
-- see:
-  - [camera-issue-report.md](/home/jabbslad/dev/omarchy-extras/camera-issue-report.md)
-  - [camera-bringup-plan.md](/home/jabbslad/dev/omarchy-extras/camera-bringup-plan.md)
-  - [patches/ipu-bridge-add-sslc2000.patch](/home/jabbslad/dev/omarchy-extras/patches/ipu-bridge-add-sslc2000.patch)
-  - [packaging/ipu-bridge-sslc2000/](/home/jabbslad/dev/omarchy-extras/packaging/ipu-bridge-sslc2000)
-  - [packaging/sc200pc-dkms/](/home/jabbslad/dev/omarchy-extras/packaging/sc200pc-dkms)
-  - [packaging/sc200pc-ipu75xa-config/](/home/jabbslad/dev/omarchy-extras/packaging/sc200pc-ipu75xa-config)
-  - [packaging/sc200pc-libcamera-pipewire/](/home/jabbslad/dev/omarchy-extras/packaging/sc200pc-libcamera-pipewire)
+- **Caps Lock keyboard fix:** Omarchy's default `kb_options =
+  compose:caps` breaks Caps Lock on this model; the script clears it.
+- **Camera enablement** (Samsung SC200PC sensor on Intel IPU7) is
+  delegated to a separate repo,
+  [**sc200pc-linux**](https://github.com/jabbslad/sc200pc-linux). The
+  install script clones it under `~/dev/sc200pc-linux` and runs its
+  installer, which builds the kernel modules (DKMS), patches and
+  rebuilds Arch `libcamera` with the SC200PC sensor helper, and wires
+  up PipeWire. Camera works for Chromium / qcam / PipeWire-fed apps via
+  libcamera's "simple" pipeline handler with software ISP. Image
+  quality is functional but not yet production — see the sc200pc-linux
+  README.
+- An in-depth investigation of the proprietary Intel IPU7 vendor HAL
+  path was archived to
+  [**sc200pc-ipu7-hal-exploration**](https://github.com/jabbslad/sc200pc-ipu7-hal-exploration).
+  The HAL path is unworkable on this sensor without Intel-internal
+  tooling; the libcamera + soft-ISP path is the same one mainline
+  libcamera + Fedora / Ubuntu use for IPU6/IPU7 webcams in 2026.
 
 ## Manual steps after install
 
