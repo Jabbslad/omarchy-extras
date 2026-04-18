@@ -8,6 +8,29 @@ Linux can consume. It is the companion to `camera-bringup-plan.md` and
 focuses specifically on extraction and transplant — not kernel graph
 wiring, which is already solved.
 
+## TL;DR for a new agent
+
+- **Kernel + streaming path**: already works (see `camera-bringup-plan.md`).
+  Don't touch.
+- **Userspace HAL path** via `graph_settings_*.bin`: abandoned. Windows
+  graph container magic is incompatible with Linux libcamhal (`.IPU75XA.bin`).
+  Don't pursue.
+- **Userspace libcamera path**: works, but image quality is bad (olive
+  cast on indoor scenes — see `camera-issue-report.md:22-28`). This is
+  the problem we're trying to fix by porting Windows tuning.
+- **What's been done on this branch**:
+  1. Plan documented in this file.
+  2. `tools/aiqb-dump/` v0 reverse-engineers the Intel CPFF/AIQB
+     container format and parses the SC200PC AIQB with 100% framing
+     coverage.
+  3. One record decoder (sensor info, r00) verified against the kernel
+     init table.
+- **What's next** (details in `## Handoff` below):
+  a Galaxy Book6 Pro booted into Arch + a wrapper around Intel's
+  `libia_cmc_parser` to decode the remaining records semantically,
+  then transplant CCM / BlackLevel values into
+  `packaging/sc200pc-libcamera-pipewire/sc200pc.yaml`.
+
 ## Source package
 
 - Microsoft Update Catalog, search term `SSLC2000`
@@ -165,7 +188,7 @@ triples rather than guessing them.
 - Autofocus, EEPROM ID validation
 - Chart-based recalibration; we're porting, not recapturing
 
-## Next actions
+## Next actions (history)
 
 1. ~~Inspect `.aiqb` header + pick a parser strategy.~~ **done**
 2. ~~Stand up AIQB dumper (v0 framing).~~ **done** — see
@@ -173,16 +196,92 @@ triples rather than guessing them.
 3. ~~Decode record type 0x0066 flags 0x0002 (sensor info).~~ **done** —
    produces `{width=1928, height=1088, mipi_lanes=2, bits_per_pixel=10}`
    which exactly matches the kernel init table.
-4. Decode remaining records. Partial progress on r01 (5-entry
-   illuminant table), r03 (pixel-array layout), and r05/r06 (LSC grids
-   with framing `5 CCTs × 4 channels × 63 × 47` u16 cells). Fully
-   nailing CCM and LSC needs either (a) a wrapper around Intel's
-   `ia_cmc_parser` on the target Arch box, or (b) a comparative AIQB
-   from `intel/ipu6-camera-bins` for a sensor with a published Linux
-   tuning. This is the next on-hardware step. See
-   `tools/aiqb-dump/README.md` for the record table and RE hooks
-   (`--dump-record`, `--extract-record`).
-5. Transplant records into `sc200pc.yaml` algorithms: BlackLevel,
-   Awb, Ccm, LensShading (if libcamera simple soft IPA supports it).
+4. Decode remaining records (partial, continues in Handoff below).
+5. Transplant records into `sc200pc.yaml` algorithms (pending decoders).
 6. Validate with `sc200pc-libcamera-check` and qualitative indoor
-   capture.
+   capture (pending 5).
+
+## Handoff for the next agent
+
+### Reproduce what's here
+
+```bash
+# 1. Run the AIQB dumper against the checked-in Windows AIQB.
+cd tools/aiqb-dump
+python3 aiqb-dump.py \
+  ../../packaging/sc200pc-ipu75xa-config/SC200PC_KAFC917_PTL.aiqb
+
+# 2. (Optional) inspect a specific record in multiple views.
+python3 aiqb-dump.py \
+  ../../packaging/sc200pc-ipu75xa-config/SC200PC_KAFC917_PTL.aiqb \
+  --dump-record 0:5
+```
+
+Output anatomy, decoder status per record, and RE tips live in
+[`tools/aiqb-dump/README.md`](tools/aiqb-dump/README.md). Start there
+before adding decoders.
+
+### Recommended next step
+
+**Write a C wrapper around `libia_cmc_parser` on the Galaxy Book6 Pro.**
+`intel-ipu7-camera` already installs the parser; a 50-line tool that
+mmaps the AIQB, calls `ia_cmc_parser_init`, and prints the resulting
+`ia_cmc_t` gives us *all* the tuning values (CCM per CCT, AWB gains,
+LSC grids, black level, gamma) without further RE.
+
+Proposed layout: `tools/aiqb-dump/c/ia_cmc_dump.c`, plus a small
+Makefile or PKGBUILD that links against `/usr/lib/libia_cmc_parser.so`.
+Diff its output against `aiqb-dump.py --dump-record` to pin each
+record-type byte-pattern to its semantic name; fold that back into
+the Python tool so it works off-hardware for future sensors.
+
+If the Galaxy Book6 Pro isn't available, the fallback is comparative
+RE against the AIQBs in
+[`intel/ipu6-camera-bins`](https://github.com/intel/ipu6-camera-bins)
+for a sensor with a published libcamera tuning (e.g. OV13B10).
+
+### Transplant target
+
+Once records are decoded, rewrite
+`packaging/sc200pc-libcamera-pipewire/sc200pc.yaml`. The simple soft
+IPA consumes only:
+
+- `BlackLevel` (`r, gr, gb, b` in 16-bit normalised units — candidate
+  source: small u16/u32 record with 4 pedestal values).
+- `Ccm` (list of `{ct, ccm[9]}` — candidate source: r07, 672 bytes,
+  fixed-point; needs dequantisation before writing to YAML).
+- `Awb`, `Adjust`, `Agc` — take no per-sensor data; don't touch.
+
+LSC (r05/r06) is not wired into the simple soft IPA today. Park it.
+
+### Don't do these
+
+- Don't try to make the Windows graph binary work — different
+  container format entirely.
+- Don't hand-tune CCMs further in `sc200pc.yaml` before getting the
+  Windows values. The current values are guesses; replacing them is
+  the whole point of this branch.
+- Don't ship the `.aiqb` as anything other than what it already is
+  (the `.aiqb` is OEM content; only the derived YAML numbers are
+  transplantable).
+- Don't regress the kernel side (`packaging/sc200pc-dkms/`,
+  `packaging/ipu-bridge-sslc2000/`) — it works and is out of scope
+  for this branch.
+
+### Validation
+
+After updating `sc200pc.yaml`:
+
+```bash
+# On the Galaxy Book6 Pro:
+sudo pacman -U packaging/sc200pc-libcamera-pipewire/*.pkg.tar.zst
+systemctl --user restart wireplumber pipewire \
+  xdg-desktop-portal xdg-desktop-portal-hyprland
+sc200pc-libcamera-check   # ships with sc200pc-libcamera-pipewire
+cam -l                    # confirms libcamera picks up sc200pc helper
+# Qualitative: open a browser + camera test page, check indoor scene
+# for the olive cast described in camera-issue-report.md:22-28.
+```
+
+Image-quality pass criteria are subjective for now; see the status
+update in `camera-issue-report.md:22-28`.
