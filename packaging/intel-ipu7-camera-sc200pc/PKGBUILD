@@ -1,6 +1,6 @@
 pkgname=intel-ipu7-camera-sc200pc
 pkgver=1.0.3
-pkgrel=11
+pkgrel=12
 pkgdesc="Patchable SC200PC-focused replacement for intel-ipu7-camera on Panther Lake"
 arch=('x86_64')
 url="https://github.com/TsaiGaggery/hurrican_omarchy_enabling"
@@ -165,8 +165,7 @@ build() {
     -DIPU_VERSIONS="ipu75xa" \
     -DUSE_STATIC_GRAPH=ON \
     -DUSE_STATIC_GRAPH_AUTOGEN=ON \
-    -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-    -DCMAKE_CXX_FLAGS="-DSTATIC_GRAPH_LOG"
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
   cmake --build build -j"$(nproc)"
   DESTDIR="${stage}" cmake --install build
 
