@@ -271,6 +271,82 @@ def scan_records(payload: bytes, start: int,
     return records
 
 
+# -- Record decoders ---------------------------------------------------------
+
+# Confidence scale used below:
+#   high   — cross-checked against known sensor facts (resolution, lanes)
+#   medium — values are plausible but exact semantics not pinned
+#   low    — best-guess framing only
+#
+# Today only the sensor-info record is "high" confidence. The rest are
+# left to the raw inspector (dump_record_views) so RE on the target
+# Galaxy Book6 Pro can continue alongside a known-good AIQB from
+# intel/ipu6-camera-bins to cross-reference.
+
+
+def decode_sensor_info(body: bytes) -> dict[str, Any] | None:
+    """Decode a type=0x0066 flags=0x0002 sensor-info record.
+
+    Layout (confidence: high — matches 1928x1088 2-lane 10-bit observed
+    on SC200PC, and the kernel init table):
+
+        offset  size  field
+             0     2  active width  (u16)
+             2     2  active height (u16)
+             4     2  format code?  (u16)       -- 0x000f observed
+             6     2  MIPI lane count (u16)
+             8     2  bits per pixel (u16)
+            10  rest  padding (zero)
+    """
+    if len(body) < 10:
+        return None
+    width, height, fmt_code, lanes, bpp = struct.unpack_from("<5H", body, 0)
+    return {
+        "width": width,
+        "height": height,
+        "format_code": fmt_code,
+        "mipi_lanes": lanes,
+        "bits_per_pixel": bpp,
+    }
+
+
+def decode_record(rtype: int, flags: int, body: bytes) -> dict[str, Any] | None:
+    """Dispatch to a type-specific decoder. Returns None if the
+    combination is not decoded yet."""
+    if rtype == 0x0066 and flags == 0x0002:
+        return decode_sensor_info(body)
+    return None
+
+
+def dump_record_views(body: bytes, max_lines: int = 8) -> list[str]:
+    """Produce several human-readable interpretations of a record body.
+    Intended for RE: run this on an unknown record and eyeball which
+    interpretation looks like a real table."""
+    lines: list[str] = []
+    lines.append(f"length: {len(body)} bytes")
+    # Hex dump, first few lines only
+    for i in range(0, min(len(body), max_lines * 16), 16):
+        chunk = body[i:i + 16]
+        ascii_part = "".join(chr(c) if 32 <= c < 127 else "." for c in chunk)
+        lines.append(f"  {i:04x}: {chunk.hex(' ', 2):<47s}  |{ascii_part}|")
+    if len(body) > max_lines * 16:
+        lines.append(f"  ... {len(body) - max_lines * 16} more bytes")
+
+    # Try a few interpretations of the first 32 bytes
+    head = body[:32]
+    if len(head) >= 4:
+        lines.append("  u32 LE (first 8):  " + " ".join(
+            f"{v}" for v in struct.unpack_from(
+                "<" + "I" * min(8, len(head) // 4), head)))
+        lines.append("  u16 LE (first 16): " + " ".join(
+            f"{v}" for v in struct.unpack_from(
+                "<" + "H" * min(16, len(head) // 2), head)))
+        if len(head) >= 32:
+            lines.append("  f32 LE (first 8):  " + " ".join(
+                f"{v:.4g}" for v in struct.unpack_from("<8f", head)))
+    return lines
+
+
 # -- Output ------------------------------------------------------------------
 
 def dump_text(path: Path, root: Container, buf: bytes) -> None:
@@ -322,10 +398,13 @@ def dump_text(path: Path, root: Container, buf: bytes) -> None:
         print(f"  records ({len(records)}, covers "
               f"0x{covered:x}/0x{c.payload_size - meta['records_offset']:x} "
               f"of record stream, tail=0x{tail:x}):")
-        for r in records[:40]:
-            print(f"    @0x{r.offset:06x}  type=0x{r.record_type:04x} "
+        for idx, r in enumerate(records[:40]):
+            body = payload[r.offset + 8:r.offset + r.length]
+            decoded = decode_record(r.record_type, r.flags, body)
+            decoded_suffix = f"  decoded={decoded}" if decoded else ""
+            print(f"    [{idx:2d}] @0x{r.offset:06x}  type=0x{r.record_type:04x} "
                   f"flags=0x{r.flags:04x}  len=0x{r.length:06x}  "
-                  f"preview={r.payload_preview_hex}")
+                  f"preview={r.payload_preview_hex}{decoded_suffix}")
         if len(records) > 40:
             print(f"    ... and {len(records) - 40} more records")
 
@@ -370,11 +449,34 @@ def dump_json(path: Path, root: Container, buf: bytes) -> dict[str, Any]:
     }
 
 
+def _select_aiqb_record(root: Container, buf: bytes,
+                        variant: int, index: int
+                        ) -> tuple[Record, bytes] | None:
+    aiqbs = [c for _d, c in walk_containers(root)
+             if c.tag == "AIQB" and not c.children]
+    if variant < 0 or variant >= len(aiqbs):
+        return None
+    c = aiqbs[variant]
+    payload = bytes(buf[c.payload_offset:c.payload_offset + c.payload_size])
+    meta = parse_aiqb_metadata(payload)
+    records = scan_records(payload, meta["records_offset"])
+    if index < 0 or index >= len(records):
+        return None
+    r = records[index]
+    body = payload[r.offset + 8:r.offset + r.length]
+    return r, body
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("path", type=Path, help="AIQB / CPFF file to parse")
     ap.add_argument("--json", type=Path,
                     help="write machine-readable JSON to this path")
+    ap.add_argument("--dump-record", type=str, metavar="V:N",
+                    help="dump a raw record in multiple interpretations "
+                         "(V = aiqb variant index, N = record index)")
+    ap.add_argument("--extract-record", type=str, metavar="V:N:FILE",
+                    help="write a record's raw payload to FILE")
     args = ap.parse_args()
 
     buf = args.path.read_bytes()
@@ -383,6 +485,30 @@ def main() -> int:
         print(f"{args.path}: not a CPFF container "
               f"(first 4 bytes: {buf[:4]!r})", file=sys.stderr)
         return 1
+
+    if args.dump_record:
+        v, n = (int(x, 0) for x in args.dump_record.split(":"))
+        sel = _select_aiqb_record(root, buf, v, n)
+        if sel is None:
+            print(f"no such record {v}:{n}", file=sys.stderr)
+            return 1
+        r, body = sel
+        print(f"aiqb[{v}] record[{n}]: type=0x{r.record_type:04x} "
+              f"flags=0x{r.flags:04x} len=0x{r.length:06x}")
+        for line in dump_record_views(body):
+            print(line)
+        return 0
+
+    if args.extract_record:
+        v, n, out = args.extract_record.split(":", 2)
+        sel = _select_aiqb_record(root, buf, int(v, 0), int(n, 0))
+        if sel is None:
+            print(f"no such record {v}:{n}", file=sys.stderr)
+            return 1
+        _, body = sel
+        Path(out).write_bytes(body)
+        print(f"wrote {len(body)} bytes to {out}")
+        return 0
 
     dump_text(args.path, root, buf)
 

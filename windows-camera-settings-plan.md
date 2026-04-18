@@ -170,12 +170,18 @@ triples rather than guessing them.
 1. ~~Inspect `.aiqb` header + pick a parser strategy.~~ **done**
 2. ~~Stand up AIQB dumper (v0 framing).~~ **done** — see
    `tools/aiqb-dump/`
-3. Decode record type 0x0066 (sensor/mode info) and 0x0064 small
-   records (likely CCM / black level / geometry). Smallest records
-   first — they're the easiest to validate.
-4. Decode record type 0x0064 118 KB records (LSC). Needs grid
-   dimensions, which likely come from one of the small metadata
-   records.
+3. ~~Decode record type 0x0066 flags 0x0002 (sensor info).~~ **done** —
+   produces `{width=1928, height=1088, mipi_lanes=2, bits_per_pixel=10}`
+   which exactly matches the kernel init table.
+4. Decode remaining records. Partial progress on r01 (5-entry
+   illuminant table), r03 (pixel-array layout), and r05/r06 (LSC grids
+   with framing `5 CCTs × 4 channels × 63 × 47` u16 cells). Fully
+   nailing CCM and LSC needs either (a) a wrapper around Intel's
+   `ia_cmc_parser` on the target Arch box, or (b) a comparative AIQB
+   from `intel/ipu6-camera-bins` for a sensor with a published Linux
+   tuning. This is the next on-hardware step. See
+   `tools/aiqb-dump/README.md` for the record table and RE hooks
+   (`--dump-record`, `--extract-record`).
 5. Transplant records into `sc200pc.yaml` algorithms: BlackLevel,
    Awb, Ccm, LensShading (if libcamera simple soft IPA supports it).
 6. Validate with `sc200pc-libcamera-check` and qualitative indoor
