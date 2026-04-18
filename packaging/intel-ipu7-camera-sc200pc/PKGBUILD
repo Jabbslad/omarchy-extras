@@ -1,0 +1,228 @@
+pkgname=intel-ipu7-camera-sc200pc
+pkgver=1.0.3
+pkgrel=6
+pkgdesc="Patchable SC200PC-focused replacement for intel-ipu7-camera on Panther Lake"
+arch=('x86_64')
+url="https://github.com/TsaiGaggery/hurrican_omarchy_enabling"
+license=('GPL-2.0-or-later' 'custom:Intel proprietary camera tuning')
+provides=('intel-ipu7-camera')
+conflicts=('intel-ipu7-camera')
+depends=(
+  'v4l2loopback-dkms'
+  'v4l2-relayd'
+  'gstreamer'
+  'gst-plugins-base'
+  'gst-plugins-good'
+  'gst-plugins-bad'
+  'jsoncpp'
+  'libdrm'
+  'sc200pc-dkms'
+  'sc200pc-ipu75xa-config'
+)
+makedepends=(
+  'git'
+  'base-devel'
+  'cmake'
+  'autoconf'
+  'automake'
+  'libtool'
+  'pkgconf'
+)
+install="${pkgname}.install"
+source=(
+  "ipu7-camera-bins::git+https://github.com/intel/ipu7-camera-bins.git#commit=403c67db6b279dd02752f11db6a34552f31a3ac5"
+  "ipu7-camera-hal::git+https://github.com/intel/ipu7-camera-hal.git#commit=b1f6ebef12111fb5da0133b144d69dd9b001836c"
+  "icamerasrc::git+https://github.com/intel/icamerasrc.git#commit=4fb31db76b618aae72184c59314b839dedb42689"
+  'README.md'
+  'camera-init.service'
+  'camera-sleep-hook'
+  '71-ipu7-hide-isys.rules'
+  '90-ipu7-psys.rules'
+  'disable-libcamera.conf'
+  'hide-ipu7-v4l2.conf'
+  'pipe_scheduler_profiles.json'
+  'ipu7.conf'
+  'v4l2-relayd-override.conf'
+)
+sha256sums=(
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+  'SKIP'
+)
+
+_stage_dir() {
+  printf '%s\n' "${srcdir}/_stage"
+}
+
+_reset_stage() {
+  local stage
+  stage="$(_stage_dir)"
+
+  rm -rf "${stage}"
+  install -d "${stage}/usr/lib" \
+             "${stage}/usr/include" \
+             "${stage}/usr/include/drm" \
+             "${stage}/usr/include/libdrm" \
+             "${stage}/usr/include/jsoncpp/json" \
+             "${stage}/usr/lib/pkgconfig"
+
+  # The HAL build expects Intel's proprietary ia_imaging headers/libs
+  # and pkg-config metadata to look system-installed. Stage them under a
+  # temporary DESTDIR-like prefix and point pkg-config at that sysroot.
+  cp -a "${srcdir}/ipu7-camera-bins/include/." "${stage}/usr/include/"
+  cp -a "${srcdir}/ipu7-camera-bins/lib/." "${stage}/usr/lib/"
+
+  # pkg-config include paths are also rewritten into the staged sysroot.
+  # Mirror the small subset of host SDK files that the HAL build resolves
+  # via pkg-config so CMake does not point at empty include/library dirs.
+  cp -a /usr/include/drm/. "${stage}/usr/include/drm/"
+  cp -a /usr/include/libdrm/. "${stage}/usr/include/libdrm/"
+  cp -a /usr/include/json/. "${stage}/usr/include/jsoncpp/json/"
+  cp -a /usr/include/xf86drm.h /usr/include/xf86drmMode.h "${stage}/usr/include/"
+  cp -a /usr/lib/libdrm.so* "${stage}/usr/lib/"
+  cp -a /usr/lib/libjsoncpp.so* "${stage}/usr/lib/"
+  cp -a /usr/lib/pkgconfig/libdrm*.pc "${stage}/usr/lib/pkgconfig/"
+  cp -a /usr/lib/pkgconfig/jsoncpp.pc "${stage}/usr/lib/pkgconfig/"
+}
+
+_apply_patch_dir() {
+  local repo=$1
+  local patch_dir="${startdir}/local-patches/${repo}"
+  local patch
+
+  [[ -d "${patch_dir}" ]] || return 0
+
+  for patch in "${patch_dir}"/*.patch; do
+    [[ -e "${patch}" ]] || continue
+    printf 'Applying %s to %s\n' "${patch##*/}" "${repo}"
+    git -C "${srcdir}/${repo}" apply --3way "${patch}"
+  done
+}
+
+_prune_stage_sdk() {
+  local stage
+  stage="$(_stage_dir)"
+
+  rm -rf "${stage}/usr/include/drm" \
+         "${stage}/usr/include/libdrm" \
+         "${stage}/usr/include/jsoncpp"
+  rm -f "${stage}/usr/include/xf86drm.h" \
+        "${stage}/usr/include/xf86drmMode.h" \
+        "${stage}/usr/lib/libdrm.so" \
+        "${stage}/usr/lib/libdrm.so."[0-9]* \
+        "${stage}/usr/lib/libjsoncpp.so" \
+        "${stage}/usr/lib/libjsoncpp.so."[0-9]* \
+        "${stage}/usr/lib/pkgconfig/libdrm.pc" \
+        "${stage}/usr/lib/pkgconfig/libdrm_"*.pc \
+        "${stage}/usr/lib/pkgconfig/jsoncpp.pc"
+}
+
+_register_sc200pc_sensor() {
+  local config=$1
+
+  [[ -f "${config}" ]] || return 0
+  grep -qF '"sc200pc-uf-0"' "${config}" && return 0
+
+  if grep -qF '"imx471-uf-0"' "${config}"; then
+    sed -i '/"imx471-uf-0"/a\            "sc200pc-uf-0",' "${config}"
+  else
+    sed -i '/"availableSensors": \[/a\            "sc200pc-uf-0",' "${config}"
+  fi
+}
+
+prepare() {
+  _apply_patch_dir "ipu7-camera-hal"
+  _apply_patch_dir "icamerasrc"
+}
+
+build() {
+  local stage
+  stage="$(_stage_dir)"
+
+  _reset_stage
+
+  export PKG_CONFIG_PATH="${stage}/usr/lib/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
+  export PKG_CONFIG_SYSROOT_DIR="${stage}"
+  export LD_LIBRARY_PATH="${stage}/usr/lib${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+
+  cd "${srcdir}/ipu7-camera-hal"
+  cmake -B build -S . \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=/usr \
+    -DCMAKE_INSTALL_LIBDIR=lib \
+    -DBUILD_CAMHAL_ADAPTOR=ON \
+    -DBUILD_CAMHAL_PLUGIN=ON \
+    -DIPU_VERSIONS="ipu75xa" \
+    -DUSE_STATIC_GRAPH=ON \
+    -DUSE_STATIC_GRAPH_AUTOGEN=ON \
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+  cmake --build build -j"$(nproc)"
+  DESTDIR="${stage}" cmake --install build
+
+  cd "${srcdir}/icamerasrc"
+  autoreconf -fi
+  unset PKG_CONFIG_SYSROOT_DIR
+  export CHROME_SLIM_CAMHAL=ON
+  ./configure --prefix=/usr
+  make -j"$(nproc)"
+  make DESTDIR="${stage}" install
+}
+
+package() {
+  local stage
+  stage="$(_stage_dir)"
+
+  _prune_stage_sdk
+
+  install -d "${pkgdir}/usr" \
+             "${pkgdir}/etc/camera/ipu75xa" \
+             "${pkgdir}/usr/share/defaults/etc/camera" \
+             "${pkgdir}/etc/systemd/system/v4l2-relayd@ipu7.service.d" \
+             "${pkgdir}/etc/v4l2-relayd.d" \
+             "${pkgdir}/etc/wireplumber/wireplumber.conf.d"
+
+  cp -dpr --no-preserve=ownership "${stage}/usr/." "${pkgdir}/usr/"
+
+  # Ship the stock upstream HAL configs/graphs/sensor descriptors.
+  cp -dpr --no-preserve=ownership \
+    "${srcdir}/ipu7-camera-hal/config/linux/ipu75xa/." \
+    "${pkgdir}/etc/camera/ipu75xa/"
+  install -Dm644 "${startdir}/pipe_scheduler_profiles.json" \
+    "${pkgdir}/etc/camera/ipu75xa/pipe_scheduler_profiles.json"
+  install -Dm644 \
+    "${srcdir}/ipu7-camera-hal/config/linux/ipu75xa/libcamhal_configs.json" \
+    "${pkgdir}/usr/share/defaults/etc/camera/libcamhal_configs.json"
+  _register_sc200pc_sensor "${pkgdir}/etc/camera/ipu75xa/libcamhal_configs.json"
+  _register_sc200pc_sensor "${pkgdir}/usr/share/defaults/etc/camera/libcamhal_configs.json"
+
+  # Local service/config layer for the SC200PC experimental path.
+  install -Dm644 "${srcdir}/camera-init.service" \
+    "${pkgdir}/usr/lib/systemd/system/camera-init.service"
+  install -Dm755 "${srcdir}/camera-sleep-hook" \
+    "${pkgdir}/usr/share/intel-ipu7-camera/camera-sleep-hook"
+  install -Dm644 "${srcdir}/71-ipu7-hide-isys.rules" \
+    "${pkgdir}/usr/lib/udev/rules.d/71-ipu7-hide-isys.rules"
+  install -Dm644 "${srcdir}/90-ipu7-psys.rules" \
+    "${pkgdir}/usr/lib/udev/rules.d/90-ipu7-psys.rules"
+  install -Dm644 "${srcdir}/disable-libcamera.conf" \
+    "${pkgdir}/etc/wireplumber/wireplumber.conf.d/10-disable-libcamera.conf"
+  install -Dm644 "${srcdir}/hide-ipu7-v4l2.conf" \
+    "${pkgdir}/etc/wireplumber/wireplumber.conf.d/60-hide-ipu7-v4l2.conf"
+  install -Dm644 "${srcdir}/ipu7.conf" \
+    "${pkgdir}/etc/v4l2-relayd.d/ipu7.conf"
+  install -Dm644 "${srcdir}/v4l2-relayd-override.conf" \
+    "${pkgdir}/etc/systemd/system/v4l2-relayd@ipu7.service.d/override.conf"
+
+  install -Dm644 "${srcdir}/README.md" \
+    "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+}
