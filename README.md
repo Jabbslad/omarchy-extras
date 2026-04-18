@@ -68,17 +68,20 @@ The script is idempotent — safe to re-run. Model-specific fixes are gated by D
   [packaging/sc200pc-ipu75xa-config/](/home/jabbslad/dev/omarchy-extras/packaging/sc200pc-ipu75xa-config)
   carries the Windows-derived AIQB / graph assets, and
   [packaging/intel-ipu7-camera-sc200pc/](/home/jabbslad/dev/omarchy-extras/packaging/intel-ipu7-camera-sc200pc)
-  carries patches (0001–0005) that fix pipeline construction. As of
-  April 18, 2026, the patched HAL successfully loads the Windows graph
-  binary, runs 3A, and constructs the PSYS pipeline. The blocker is a
-  per-graph hash mismatch: the Windows graph binary's autogen data
-  layout (hash `0xE7F37F28`) is incompatible with the Linux HAL's
-  compiled layout (hash `0x246C440B`). The IMX471 graph has a matching
-  1920×1080 resolution but its topology format descriptors also differ.
-  Resolving this requires Intel to generate a Linux-native graph binary
-  using their proprietary graphspec compiler. A response to
-  [intel/ipu7-drivers#62](https://github.com/user/intel/ipu7-drivers/issues/62)
-  with our driver and findings would be valuable to move this forward.
+  carries patches (0001–0005) that fix pipeline construction. The
+  investigation achieved GRAPH_OPEN SUCCESS with the Windows graph
+  binary, decoded its container format, and got DOL link deactivation
+  working. The `GraphConfiguration100032` struct size (6244 bytes) and
+  container header layout are confirmed compatible between the Windows
+  binary and the Linux HAL. The remaining blocker is that the CCA/PAC
+  proprietary library needs a matched triplet — graph binary, autogen
+  C++ code, and AIQB — generated together by Intel's graphspec
+  compiler. The Windows graph binary's per-graph topology hash
+  (`0xE7F37F28`) differs from the Linux HAL's compiled layout
+  (`0x246C440B`), causing the CCA to produce empty ISP parameter
+  buffers. Resolving this requires Intel to generate a Linux-native
+  graph binary. Tracked in
+  [intel/ipu7-drivers#62](https://github.com/intel/ipu7-drivers/issues/62).
 - Apps that read raw V4L2 directly (opencv, custom gstreamer pipelines
   with `videoconvert`/`bayer2rgb`) can use `/dev/video0` today. Native
   `libcamera` consumers can also be used for diagnostics, but should not
