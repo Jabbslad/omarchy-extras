@@ -62,11 +62,18 @@ The script is idempotent — safe to re-run. Model-specific fixes are gated by D
   IPA YAML remains a first-pass approximation rather than measured
   calibration. Treat the native path as functional but not production
   quality yet.
-- **Vendor HAL path is still blocked.**
+- **Vendor HAL path is still research-only.**
   [packaging/sc200pc-ipu75xa-config/](/home/jabbslad/dev/omarchy-extras/packaging/sc200pc-ipu75xa-config)
-  carries the Windows-derived AIQB / graph assets, but the HAL still
-  fails in `GraphConfig` / `PipeManager` and does not produce a working
-  browser stream. Treat it as research-only for now.
+  carries the Windows-derived AIQB / graph assets, and
+  [packaging/intel-ipu7-camera-sc200pc/](/home/jabbslad/dev/omarchy-extras/packaging/intel-ipu7-camera-sc200pc)
+  now carries the non-trivial HAL patches needed to get past the old
+  graph/input-edge failures. As of April 18, 2026, the patched HAL can
+  power the sensor on and negotiate live `NV12 1920x1080` caps through
+  `icamerasrc`, but it still does not deliver frames: the current stall
+  is in sensor timing / 3A / PSYS task startup, with errors including
+  `failed to get llp`, `Get sensor info failed`, `run 3A failed`, and
+  `PSysDevice: Failed to add task No data available`. Treat the vendor
+  HAL path as active research, not a working camera stack.
 - Apps that read raw V4L2 directly (opencv, custom gstreamer pipelines
   with `videoconvert`/`bayer2rgb`) can use `/dev/video0` today. Native
   `libcamera` consumers can also be used for diagnostics, but should not
