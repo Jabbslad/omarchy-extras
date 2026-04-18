@@ -1,6 +1,6 @@
 pkgname=sc200pc-ipu75xa-config
 pkgver=2026.04.17
-pkgrel=6
+pkgrel=7
 pkgdesc="Experimental vendor HAL assets for the Galaxy Book6 Pro SC200PC front camera"
 arch=('x86_64')
 url="https://github.com/jabbslad/omarchy-extras"
