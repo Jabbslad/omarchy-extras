@@ -164,7 +164,7 @@
         // IPU75XA HAL expects (magic 0x4229ABEE), so we can't use it
         // directly. IMX471 has the same 1928x1088 native resolution and
         // remains the least-bad Linux-compatible graph baseline.
-        "graphSettingsFile": "SC200PC_KAFC917.IPU75XA.bin",
+        "graphSettingsFile": "IMX471_BBG803N3.IPU75XA.bin",
         "graphSettingsType": "dispersed",
         "enablePSysProcessor": true,
         "dvsType": "IMG_TRANS",
