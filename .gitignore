@@ -1,0 +1,25 @@
+# Editor / tool markers
+.codex
+
+# makepkg build outputs
+packaging/**/*.pkg.tar.zst
+packaging/**/pkg/
+packaging/**/src/
+packaging/**/source/
+packaging/**/arch/
+
+# Kernel module build artifacts
+packaging/**/*.ko
+packaging/**/*.o
+packaging/**/*.mod
+packaging/**/*.mod.c
+packaging/**/*.mod.o
+packaging/**/Module.symvers
+packaging/**/modules.order
+
+# Captured raw frames / binary test data
+packaging/**/frame-*.bin
+
+# Kernel build hidden command files and DKMS source symlink
+packaging/**/.*.cmd
+packaging/**/source

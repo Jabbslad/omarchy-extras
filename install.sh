@@ -1,11 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
-# Extra setup for ASUS Zenbook 14 on top of stock Omarchy.
+# Extra setup for Omarchy on laptops.
 # Safe to re-run — all sections are idempotent.
+# Supported models: ASUS Zenbook 14 UX3405CA, Samsung Galaxy Book6 Pro NP940XJG-KGDUK.
+
+# --- Model detection ---
+MODEL="$(cat /sys/class/dmi/id/product_name /sys/class/dmi/id/product_version 2>/dev/null | tr '\n' ' ')"
+is_zenbook_ux3405ca() { [[ "$MODEL" == *"UX3405CA"* ]]; }
+is_galaxybook6_pro()  { [[ "$MODEL" == *"Galaxy Book6"* ]] || [[ "$MODEL" == *"NP940XJG"* ]]; }
+echo "Detected model: ${MODEL% }"
 
 # --- Packages ---
-yay -S --noconfirm --needed zed-bin proton-pass-bin python-terminaltexteffects
+yay -S --noconfirm --needed zed-bin proton-pass-bin
 
 # Remove 1password-beta (installed by stock Omarchy)
 if pacman -Qi 1password-beta &>/dev/null; then
@@ -18,10 +25,10 @@ mise use -g rust
 mise reshim
 
 # --- npm globals ---
-npm ls -g @anthropic-ai/claude-code &>/dev/null || npm install -g @anthropic-ai/claude-code
+#npm ls -g @anthropic-ai/claude-code &>/dev/null || npm install -g @anthropic-ai/claude-code
 
-# --- Battery optimisations (Zenbook 14 UX3405CA) ---
-# See: https://gist.github.com/jabbslad/e65ad403f5c3ebe3ca739d9e228245a0
+# --- Battery optimisations ---
+# Zenbook-specific notes: https://gist.github.com/jabbslad/e65ad403f5c3ebe3ca739d9e228245a0
 
 # PCI runtime power management - auto-suspend idle PCI devices
 sudo tee /etc/udev/rules.d/50-pci-powersave.rules >/dev/null <<'EOF'
@@ -59,8 +66,14 @@ ACTION=="add|change", SUBSYSTEM=="power_supply", ATTR{type}=="Mains", ATTR{onlin
 # Enable turbo on AC
 ACTION=="add|change", SUBSYSTEM=="power_supply", ATTR{type}=="Mains", ATTR{online}=="1", RUN+="/bin/sh -c 'echo 0 > /sys/devices/system/cpu/intel_pstate/no_turbo'"
 EOF
-# Apply now if on battery
-if [ "$(cat /sys/class/power_supply/AC0/online 2>/dev/null || echo 1)" = "0" ]; then
+# Apply now if on battery — find Mains power supply dynamically (naming varies: AC0, ADP1, etc.)
+AC_ONLINE=1
+for ps in /sys/class/power_supply/*/; do
+  [ "$(cat "$ps/type" 2>/dev/null)" = "Mains" ] || continue
+  AC_ONLINE="$(cat "$ps/online" 2>/dev/null || echo 1)"
+  break
+done
+if [ "$AC_ONLINE" = "0" ]; then
   echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo >/dev/null
 fi
 
@@ -73,8 +86,15 @@ echo powersupersave | sudo tee /sys/module/pcie_aspm/parameters/policy >/dev/nul
 
 # NVMe APST fix - Micron 2500 (DRAM-less) enters deep power states that cause I/O timeouts
 # Limit to states with ≤5.5ms wake-up latency
-echo 'KERNEL_CMDLINE[default]+=" nvme_core.default_ps_max_latency_us=5500"' |
-  sudo tee /etc/limine-entry-tool.d/nvme-apst.conf >/dev/null
+# Zenbook UX3405CA only — Samsung PM9C1a (Galaxy Book6 Pro) doesn't exhibit this
+if is_zenbook_ux3405ca; then
+  echo 'KERNEL_CMDLINE[default]+=" nvme_core.default_ps_max_latency_us=5500"' |
+    sudo tee /etc/limine-entry-tool.d/nvme-apst.conf >/dev/null
+  # Apply immediately without reboot
+  echo 5500 | sudo tee /sys/class/nvme/nvme0/power/pm_qos_latency_tolerance_us >/dev/null
+else
+  sudo rm -f /etc/limine-entry-tool.d/nvme-apst.conf
+fi
 
 # VMD cannot be disabled via kernel param or blacklist when BIOS routes NVMe through it.
 # Disable VMD in BIOS/UEFI if the option exists. Clean up old attempts.
@@ -84,15 +104,52 @@ sudo rm -f /etc/modprobe.d/vmd.conf /etc/limine-entry-tool.d/vmd-disable.conf
 # Individual devices that misbehave should get targeted udev rules instead.
 sudo rm -f /etc/modprobe.d/disable-usb-autosuspend.conf
 
-# Apply NVMe latency cap immediately without reboot
-echo 5500 | sudo tee /sys/class/nvme/nvme0/power/pm_qos_latency_tolerance_us >/dev/null
+# --- Model-specific: Samsung Galaxy Book6 Pro (NP940XJG-KGDUK) ---
+if is_galaxybook6_pro; then
+  # Omarchy default sets compose:caps, which breaks Caps Lock on this keyboard
+  if ! grep -q "^  kb_options =" ~/.config/hypr/input.conf; then
+    sed -i '/kb_layout/a\  kb_options =' ~/.config/hypr/input.conf
+  fi
+
+  # Camera support stays package-driven, but two userspace fixes are safe
+  # to apply automatically on this model:
+  # 1. Remove HAL-only WirePlumber overrides that disable libcamera and
+  #    hide the IPU7 node from PipeWire.
+  # 2. Restore user access to the raw IPU7 ISYS node for the native
+  #    libcamera/PipeWire path.
+  sudo rm -f \
+    /etc/wireplumber/wireplumber.conf.d/10-disable-libcamera.conf \
+    /etc/wireplumber/wireplumber.conf.d/60-hide-ipu7-v4l2.conf
+
+  if [[ -f packaging/sc200pc-libcamera-pipewire/72-ipu7-native-isys.rules ]]; then
+    sudo install -Dm644 \
+      packaging/sc200pc-libcamera-pipewire/72-ipu7-native-isys.rules \
+      /etc/udev/rules.d/72-ipu7-native-isys.rules
+    sudo udevadm control --reload
+    sudo udevadm trigger --subsystem-match=video4linux
+  fi
+
+  sudo systemctl stop v4l2-relayd@ipu7 2>/dev/null || true
+  systemctl --user restart wireplumber pipewire xdg-desktop-portal \
+    xdg-desktop-portal-hyprland 2>/dev/null || true
+
+  # Current status (2026-04-18):
+  # - kernel path: WORKS. ipu-bridge-sslc2000 + sc200pc-dkms together
+  #   capture real 1928x1088 raw10 BGGR frames on /dev/video0.
+  # - native libcamera path: WORKS for Chromium/qcam/PipeWire once the
+  #   IPU7 node permissions are restored and the HAL-only WirePlumber
+  #   overrides are gone.
+  # - stock libcamera still lacks the SC200PC CameraSensorHelper, so AGC
+  #   cannot converge (dark, green-tinted frames). Fix by running
+  #   `rebuild-libcamera-with-sc200pc-support` from
+  #   sc200pc-libcamera-pipewire; it applies patches/libcamera-sc200pc.patch
+  #   to the Arch libcamera PKGBUILD and reinstalls. The patch is small
+  #   and intended for upstream.
+  # - vendor HAL path remains blocked in GraphConfig / PipeManager.
+fi
 
 # Rebuild boot entry so kernel cmdline picks up the limine-entry-tool drop-ins
 sudo limine-update
-
-# Fix /boot permissions - world-accessible random seed is a security hole
-# chmod doesn't stick on FAT32; must use fstab mount options instead
-sudo sed -i 's/fmask=0022,dmask=0022/fmask=0077,dmask=0077/' /etc/fstab
 
 # --- Touchpad preferences ---
 sed -i \
@@ -126,67 +183,11 @@ EOF
 grep -q "uwsm app -- hyprsunset" ~/.config/hypr/autostart.conf 2>/dev/null || \
   echo "exec-once = uwsm app -- hyprsunset" >> ~/.config/hypr/autostart.conf
 
-# --- uwsm session shutdown cycle fix ---
-# Breaks a stop ordering cycle: envelope→shutdown→wm@→envelope
-# that causes Hyprland coredumps on every session shutdown.
-# Before= reset in drop-ins doesn't work in systemd 260, so we use
-# full unit overrides instead.
-
-mkdir -p ~/.config/systemd/user
-
-# envelope: remove After=wayland-session-shutdown.target
-cat > ~/.config/systemd/user/wayland-session-envelope@.target <<'UNIT'
-[Unit]
-Description=Session envelope of %I Wayland compositor
-Documentation=man:uwsm(1) man:systemd.special(7)
-BindsTo=wayland-wm-env@%i.service wayland-wm@%i.service
-Before=wayland-wm-env@%i.service wayland-wm@%i.service
-PropagatesStopTo=wayland-wm@%i.service
-Conflicts=wayland-session-shutdown.target
-# Removed: After=wayland-session-shutdown.target (causes stop ordering cycle)
-StopWhenUnneeded=yes
-UNIT
-
-# wm-env: remove Before=wayland-session-shutdown.target
-cat > ~/.config/systemd/user/wayland-wm-env@.service <<'UNIT'
-[Unit]
-Description=Environment preloader for %I
-Documentation=man:uwsm(1)
-BindsTo=wayland-session-pre@%i.target
-Before=wayland-session-pre@%i.target graphical-session-pre.target
-PropagatesStopTo=wayland-session-pre@%i.target
-Wants=wayland-session-envelope@%i.target
-OnSuccess=wayland-session-shutdown.target
-OnSuccessJobMode=replace-irreversibly
-OnFailure=wayland-session-shutdown.target
-OnFailureJobMode=replace-irreversibly
-Conflicts=wayland-session-shutdown.target
-# Removed: Before=wayland-session-shutdown.target (causes stop ordering cycle)
-RefuseManualStart=yes
-RefuseManualStop=yes
-StopWhenUnneeded=yes
-CollectMode=inactive-or-failed
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/usr/bin/uwsm aux prepare-env -- "%I"
-ExecStopPost=/usr/bin/uwsm aux cleanup-env
-Restart=no
-EnvironmentFile=-%t/uwsm/env_session.conf
-SyslogIdentifier=uwsm_env-preloader
-Slice=session.slice
-UNIT
-
-# Clean up old ineffective drop-in attempts
-rm -rf ~/.config/systemd/user/wayland-session-envelope@.target.d
-rm -rf ~/.config/systemd/user/wayland-session-envelope@hyprland.desktop.target.d
-rm -rf ~/.config/systemd/user/wayland-wm-env@.service.d
-
 # --- Tailscale ---
 if ! command -v tailscale &>/dev/null; then
   omarchy-install-tailscale
 fi
-sudo tailscale set --operator=$USER
+sudo tailscale set --operator="$USER"
 if ! systemctl --user is-enabled tailscale-systray &>/dev/null; then
   tailscale configure systray --enable-startup=systemd
 fi

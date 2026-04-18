@@ -1,0 +1,192 @@
+//
+// SC200PC (Samsung/SmartSens) user-facing camera on module KAFC917,
+// Panther Lake IPU75XA.
+//
+// Derived from Intel's imx471-uf.json reference (Apache-2.0); both
+// sensors share the 1928x1088 raw10 output layout. Differences:
+//   - SC200PC Bayer order: BGGR (vs IMX471 RGGB)
+//   - Tuning + graph assets: SC200PC_KAFC917_PTL
+//
+
+{
+  "CameraSettings": {
+    "Sensor": [
+      {
+        "name": "sc200pc-uf",
+        "description": "SC200PC (Samsung) as front-facing sensor.",
+        "MediaCtlConfig": [
+          {
+            "id":  0 ,
+            "configMode": "AUTO",
+            "output": [1928, 1088],
+            "format": "V4L2_PIX_FMT_SBGGR10",
+            "formats": [
+              {
+                "name": "sc200pc $I2CBUS", "pad": 0, "width": 1928, "height": 1088,
+                "format": "V4L2_MBUS_FMT_SBGGR10_1X10"
+              },
+              {
+                "name": "Intel IPU7 CSI2 $CSI_PORT", "pad": 0, "width": 1928, "height": 1088,
+                "format": "V4L2_MBUS_FMT_SBGGR10_1X10"
+              }
+            ],
+            "link": [
+              {
+                "srcName": "sc200pc $I2CBUS", "srcPad": 0, "sinkName": "Intel IPU7 CSI2 $CSI_PORT",
+                "sinkPad": 0, "enable": true
+              },
+              {
+                "srcName": "Intel IPU7 CSI2 $CSI_PORT", "srcPad": 1,
+                "sinkName": "Intel IPU7 ISYS Capture $CAP_N", "sinkPad": 0, "enable": true
+              }
+            ],
+            "videonode": [
+              {
+                "name": "Intel IPU7 ISYS Capture $CAP_N", "videoNodeType": "VIDEO_GENERIC"
+              },
+              {
+                "name": "Intel IPU7 CSI2 $CSI_PORT", "videoNodeType": "VIDEO_ISYS_RECEIVER"
+              },
+              {
+                "name": "sc200pc $I2CBUS", "videoNodeType": "VIDEO_PIXEL_ARRAY"
+              }
+            ]
+          }
+        ],
+        "StaticMetadata": {
+          "supportedStreamConfig": [
+            {
+              "format": "V4L2_PIX_FMT_NV12", "size": [1920, 1080], "field": 0, "mcId": 0
+            },
+            {
+              "format": "V4L2_PIX_FMT_NV12", "size": [1280, 720], "field": 0, "mcId": 0
+            },
+            {
+              "format": "V4L2_PIX_FMT_NV12", "size": [640, 480], "field": 0, "mcId": 0
+            },
+            {
+              "format": "V4L2_PIX_FMT_NV12", "size": [640, 360], "field": 0, "mcId": 0
+            }
+          ],
+          "supportedFeatures": [
+            "MANUAL_EXPOSURE", "MANUAL_WHITE_BALANCE", "IMAGE_ENHANCEMENT",
+            "NOISE_REDUCTION", "PER_FRAME_CONTROL", "SCENE_MODE" ],
+          "fpsRange": [ 15, 15, 15, 30, 30, 30 ],
+          "evRange": [ -6, 6 ],
+          "evStep": [ 1, 3 ],
+          "supportedAeMode": [ "AUTO", "MANUAL" ],
+          "supportedVideoStabilizationModes": ["OFF"],
+          "supportedSceneMode": ["NORMAL"],
+          "supportedAntibandingMode": [ "AUTO", "50Hz", "60Hz", "OFF" ],
+          "supportedAwbMode": [ "AUTO", "INCANDESCENT", "FLUORESCENT", "DAYLIGHT", "FULL_OVERCAST",
+            "PARTLY_OVERCAST", "SUNSET", "VIDEO_CONFERENCE", "MANUAL_CCT_RANGE", "MANUAL_WHITE_POINT",
+            "MANUAL_GAIN", "MANUAL_COLOR_TRANSFORM" ],
+          "supportedAfMode": [ "OFF" ],
+          "metadata":{
+            "ae.lockAvailable": [1],
+            "awb.lockAvailable": [1],
+            "control.availableModes" : [ 0, 1 ],
+            "control.availableSceneModes": [0],
+            "control.maxRegions" : [ 1, 0, 0 ],
+            "statistics.info.availableFaceDetectModes" : [0],
+            "sensor.info.exposureTimeRange": [ 100, 100000 ],
+            "sensor.info.activeArraySize": [ 0, 0, 1928, 1088 ],
+            "sensor.info.pixelArraySize": [1928, 1088],
+            // 0:RGGB, 1:GRBG, 2:GBRG, 3:BGGR, 4:RGB
+            "sensor.info.colorFilterArrangement": [3],
+            "request.maxNumOutputStreams": [ 1, 3, 1 ],
+            "request.maxNumInputStreams": [1],
+            "request.pipelineMaxDepth": [7],
+            "request.availableCapabilities": [ 0, 1, 2, 4, 5, 6 ],
+            "scaler.availableInputOutputFormatsMap": [ 34, 2, 33, 35 ],
+            "sensor.opaqueRawSize": [1928, 1088, 100],
+            "scaler.availableStreamConfigurations": [
+              33,1920,1080,0,
+              33,1280,720,0,
+              33,640,480,0,
+              33,640,360,0,
+              35,1920,1080,0,
+              35,1280,720,0,
+              35,640,480,0,
+              35,640,360,0,
+              34,1920,1080,0,
+              34,1280,720,0,
+              34,640,480,0,
+              34,640,360,0
+            ],
+            "scaler.availableMinFrameDurations": [
+              33,1920,1080,33333333,
+              33,1280,720,33333333,
+              33,640,480,33333333,
+              33,640,360,33333333,
+              35,1920,1080,33333333,
+              35,1280,720,33333333,
+              35,640,480,33333333,
+              35,640,360,33333333,
+              34,1920,1080,33333333,
+              34,1280,720,33333333,
+              34,640,480,33333333,
+              34,640,360,33333333
+            ],
+            "scaler.availableStallDurations": [
+              33,1920,1080,33333333,
+              33,1280,720,33333333,
+              33,640,480,33333333,
+              33,640,360,33333333
+            ],
+            "jpeg.availableThumbnailSizes": [ 0, 0, 320, 180, 320, 240 ],
+            "edge.availableEdgeModes": [ 0, 1, 2, 3 ],
+            "hotPixel.availableHotPixelModes": [ 1, 2 ],
+            "noiseReduction.availableNoiseReductionModes": [ 0, 1, 2, 4 ],
+            "tonemap.maxCurvePoints": [1024],
+            "tonemap.availableToneMapModes": [ 1, 2, 3, 4 ],
+            "reprocess.maxCaptureStall": [4],
+            "info.supportedHardwareLevel": [1],
+            "sync.maxLatency": [0]
+          }
+        },
+        "supportedTuningConfig": [ ["NORMAL", "VIDEO", "SC200PC_KAFC917_PTL"], ["STILL_CAPTURE", "VIDEO", "SC200PC_KAFC917_PTL"]],
+        "lardTags": [[ "VIDEO", "DFLT", "DFLT", "DFLT", "DFLT" ]],
+        "supportedISysSizes": [[1928, 1088]],
+        "supportedISysFormat": ["V4L2_PIX_FMT_SBGGR10"],
+        "enableAIQ": true,
+        "iSysRawFormat": "V4L2_PIX_FMT_SBGGR10",
+        "maxRawDataNum": 32,
+        "initialSkipFrame": 0,
+        "exposureLag":  2,
+        "gainLag": 2,
+        "digitalGainLag": 0,
+        "ltmGainLag": 1,
+        "yuvColorRangeMode": "full",
+        "pipeSwitchDelayFrame": 60,
+        // The SC200PC graph binary extracted from Windows is in a
+        // different container format (magic 0x5C63B5E7) than the Linux
+        // IPU75XA HAL expects (magic 0x4229ABEE), so we can't use it
+        // directly. IMX471 has the same 1928x1088 native resolution and
+        // its graph settings work for our purposes — the sensor-specific
+        // bits (Bayer order, debayer weights) are parameterised by the
+        // AIQB tuning binary, not the graph.
+        "graphSettingsFile": "IMX471_BBG803N3.IPU75XA.bin",
+        "graphSettingsType": "dispersed",
+        "enablePSysProcessor": true,
+        "dvsType": "IMG_TRANS",
+        "testPatternMap": { "Off": 0, "ColorBars": 1
+        },
+        "enableAiqd": true,
+        "useCrlModule": false,
+        "pslOutputMapForRotation": [
+          [[1920, 1080], [1920, 1080]],
+          [[1280, 720], [1280, 720]],
+          [[640, 480], [1280, 960]],
+          [[640, 360], [1280, 960]]
+        ],
+        "maxRequestsInflight": 6,
+        "psysBundleWithAic": false,
+        "skipFrameV4L2Error": true,
+        "isISYSCompression": false,
+        "isPSACompression": false,
+        "usingMockPSys": false
+      }
+    ]
+  }
+}
