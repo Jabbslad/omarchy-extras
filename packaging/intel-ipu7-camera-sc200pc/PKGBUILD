@@ -1,6 +1,6 @@
 pkgname=intel-ipu7-camera-sc200pc
 pkgver=1.0.3
-pkgrel=19
+pkgrel=20
 pkgdesc="Patchable SC200PC-focused replacement for intel-ipu7-camera on Panther Lake"
 arch=('x86_64')
 url="https://github.com/TsaiGaggery/hurrican_omarchy_enabling"

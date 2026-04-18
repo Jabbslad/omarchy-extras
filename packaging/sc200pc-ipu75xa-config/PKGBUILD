@@ -1,6 +1,6 @@
 pkgname=sc200pc-ipu75xa-config
 pkgver=2026.04.17
-pkgrel=9
+pkgrel=11
 pkgdesc="Experimental vendor HAL assets for the Galaxy Book6 Pro SC200PC front camera"
 arch=('x86_64')
 url="https://github.com/jabbslad/omarchy-extras"
@@ -15,10 +15,12 @@ source=(
   'README.md'
   'sc200pc-uf.json'
   'SC200PC_KAFC917_PTL.aiqb'
+  'IMX471_BBG803N3_PTL.aiqb'
   'SC200PC_KAFC917.IPU75XA.bin'
   'sc200pc-hal-check'
 )
 sha256sums=(
+  'SKIP'
   'SKIP'
   'SKIP'
   'SKIP'
@@ -34,6 +36,8 @@ package() {
 
   install -m644 "${srcdir}/SC200PC_KAFC917_PTL.aiqb" \
     "${pkgdir}/etc/camera/ipu75xa/SC200PC_KAFC917_PTL.aiqb"
+
+  # IMX471 AIQB is already installed by intel-ipu7-camera-sc200pc
 
   install -m644 "${srcdir}/SC200PC_KAFC917.IPU75XA.bin" \
     "${pkgdir}/etc/camera/ipu75xa/gcss/SC200PC_KAFC917.IPU75XA.bin"

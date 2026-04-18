@@ -5,7 +5,7 @@
 // Derived from Intel's imx471-uf.json reference (Apache-2.0); both
 // sensors share the 1928x1088 raw10 output layout. Differences:
 //   - SC200PC Bayer order: BGGR (vs IMX471 RGGB)
-//   - Tuning asset: SC200PC_KAFC917_PTL
+//   - Tuning asset: IMX471_BBG803N3_PTL
 //
 
 {
@@ -145,7 +145,7 @@
             "sync.maxLatency": [0]
           }
         },
-        "supportedTuningConfig": [ ["NORMAL", "VIDEO", "SC200PC_KAFC917_PTL"], ["STILL_CAPTURE", "VIDEO", "SC200PC_KAFC917_PTL"]],
+        "supportedTuningConfig": [ ["NORMAL", "VIDEO", "IMX471_BBG803N3_PTL"], ["STILL_CAPTURE", "VIDEO", "IMX471_BBG803N3_PTL"]],
         "lardTags": [[ "VIDEO", "DFLT", "DFLT", "DFLT", "DFLT" ]],
         "supportedISysSizes": [[1928, 1088]],
         "supportedISysFormat": ["V4L2_PIX_FMT_SBGGR10"],
@@ -164,7 +164,7 @@
         // IPU75XA HAL expects (magic 0x4229ABEE), so we can't use it
         // directly. IMX471 has the same 1928x1088 native resolution and
         // remains the least-bad Linux-compatible graph baseline.
-        "graphSettingsFile": "SC200PC_KAFC917.IPU75XA.bin",
+        "graphSettingsFile": "IMX471_BBG803N3.IPU75XA.bin",
         "graphSettingsType": "dispersed",
         "enablePSysProcessor": true,
         "dvsType": "IMG_TRANS",
