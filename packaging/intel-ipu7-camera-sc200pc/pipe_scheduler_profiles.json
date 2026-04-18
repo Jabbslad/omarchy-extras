@@ -100,6 +100,23 @@
         ]
       },
       {
+        "id": 3, "graphId": 100032,
+        "pipe_executors": [
+          {
+            "name": "video_lb",
+            "nodes": [
+              "lbff"
+            ]
+          },
+          {
+            "name": "video_bb",
+            "nodes": [
+              "bbps"
+            ]
+          }
+        ]
+      },
+      {
         "id": 2, "graphId": 100005,
         "pipe_executors": [
           {
