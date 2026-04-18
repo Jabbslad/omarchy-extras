@@ -1,0 +1,5 @@
+# Hide raw IPU7 ISYS capture devices from ALL applications.
+# These are internal ISP nodes that output raw Bayer frames and are not
+# the user-facing camera endpoint in the vendor HAL workflow.
+# Camera is provided via v4l2loopback (/dev/video50) through v4l2-relayd.
+SUBSYSTEM=="video4linux", ATTR{name}=="Intel IPU7 ISYS Capture *", TAG-="uaccess", TAG-="seat", MODE="0600", GROUP="root"
