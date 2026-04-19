@@ -96,6 +96,15 @@ else
   sudo rm -f /etc/limine-entry-tool.d/nvme-apst.conf
 fi
 
+# Xe Panel Replay causes black screen on Galaxy Book6 Pro (Panther Lake / Arc B390).
+# Disable it via kernel param. Zenbook UX3405CA uses i915, not affected.
+if is_galaxybook6_pro; then
+  echo 'KERNEL_CMDLINE[default]+=" xe.enable_panel_replay=0"' |
+    sudo tee /etc/limine-entry-tool.d/xe-panel-replay.conf >/dev/null
+else
+  sudo rm -f /etc/limine-entry-tool.d/xe-panel-replay.conf
+fi
+
 # VMD cannot be disabled via kernel param or blacklist when BIOS routes NVMe through it.
 # Disable VMD in BIOS/UEFI if the option exists. Clean up old attempts.
 sudo rm -f /etc/modprobe.d/vmd.conf /etc/limine-entry-tool.d/vmd-disable.conf
@@ -112,7 +121,11 @@ if is_galaxybook6_pro; then
   fi
 
   # Camera enablement (SC200PC sensor + IPU7) lives in its own repo.
-  # Clone or update it under ~/dev and run its installer.
+  # We want this installed on every Galaxy Book6 Pro. The installer
+  # builds the sc200pc DKMS driver, the ipu-bridge-sslc2000 DKMS driver,
+  # and the galaxybook6pro-camera meta package (which ships the
+  # libcamera tuning YAML and WirePlumber config). Stock Arch libcamera
+  # is used unmodified.
   CAMERA_REPO_DIR="${HOME}/dev/sc200pc-linux"
   if [[ ! -d "${CAMERA_REPO_DIR}/.git" ]]; then
     mkdir -p "${HOME}/dev"

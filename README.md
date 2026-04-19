@@ -31,24 +31,42 @@ The script is idempotent — safe to re-run. Model-specific fixes are gated by D
 
 ### Galaxy Book6 Pro NP940XJG-KGDUK only
 
+- **Panel Replay black screen fix:** disables `xe.enable_panel_replay=0` kernel
+  param — Panel Replay (PSR successor) on the Panther Lake / Arc B390 xe driver
+  causes intermittent black screen.
 - **Caps Lock keyboard fix:** Omarchy's default `kb_options =
   compose:caps` breaks Caps Lock on this model; the script clears it.
 - **Camera enablement** (Samsung SC200PC sensor on Intel IPU7) is
   delegated to a separate repo,
   [**sc200pc-linux**](https://github.com/jabbslad/sc200pc-linux). The
   install script clones it under `~/dev/sc200pc-linux` and runs its
-  installer, which builds the kernel modules (DKMS), patches and
-  rebuilds Arch `libcamera` with the SC200PC sensor helper, and wires
-  up PipeWire. Camera works for Chromium / qcam / PipeWire-fed apps via
-  libcamera's "simple" pipeline handler with software ISP. Image
-  quality is functional but not yet production — see the sc200pc-linux
-  README.
+  installer. On this laptop the installer builds two DKMS kernel
+  modules (the SC200PC sensor driver and an IPU-bridge override that
+  adds the `SSLC2000` ACPI HID), ships a small libcamera tuning YAML,
+  and a WirePlumber rule that hides the raw IPU7 ISYS V4L2 nodes.
+  **Stock Arch `libcamera` is used unmodified — no libcamera patches.**
+  Camera works for Chromium / qcam / PipeWire-fed apps via libcamera's
+  "simple" pipeline handler with software ISP. Image quality is
+  functional but not yet production — see the sc200pc-linux README.
 - An in-depth investigation of the proprietary Intel IPU7 vendor HAL
   path was archived to
   [**sc200pc-ipu7-hal-exploration**](https://github.com/jabbslad/sc200pc-ipu7-hal-exploration).
   The HAL path is unworkable on this sensor without Intel-internal
   tooling; the libcamera + soft-ISP path is the same one mainline
   libcamera + Fedora / Ubuntu use for IPU6/IPU7 webcams in 2026.
+
+## Pre-install: Galaxy Book6 Pro black screen fix
+
+The Panther Lake / Arc B390 xe driver's Panel Replay feature can cause a black
+screen during the Omarchy installer. At the Limine boot menu:
+
+1. Select the boot entry
+2. Press **E** to edit the kernel command line
+3. Append `xe.enable_panel_replay=0`
+4. Boot
+
+This is a one-shot edit — repeat it for the first boot after install until you
+run `install.sh`, which makes it permanent via a limine drop-in.
 
 ## Manual steps after install
 
