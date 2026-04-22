@@ -4,6 +4,17 @@ set -euo pipefail
 # Extra setup for Omarchy on laptops.
 # Safe to re-run — all sections are idempotent.
 # Supported models: ASUS Zenbook 14 UX3405CA, Samsung Galaxy Book6 Pro NP940XJG-KGDUK.
+#
+# Usage: ./install.sh [--with-camera]
+#   --with-camera   Also install the Galaxy Book6 Pro camera drivers (sc200pc-linux).
+
+INSTALL_CAMERA=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --with-camera) INSTALL_CAMERA=true; shift ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
 
 # --- Model detection ---
 MODEL="$(cat /sys/class/dmi/id/product_name /sys/class/dmi/id/product_version 2>/dev/null | tr '\n' ' ')"
@@ -121,19 +132,20 @@ if is_galaxybook6_pro; then
   fi
 
   # Camera enablement (SC200PC sensor + IPU7) lives in its own repo.
-  # We want this installed on every Galaxy Book6 Pro. The installer
-  # builds the sc200pc DKMS driver, the ipu-bridge-sslc2000 DKMS driver,
-  # and the galaxybook6pro-camera meta package (which ships the
-  # libcamera tuning YAML and WirePlumber config). Stock Arch libcamera
+  # The installer builds the sc200pc DKMS driver, the ipu-bridge-sslc2000
+  # DKMS driver, and the galaxybook6pro-camera meta package (which ships
+  # the libcamera tuning YAML and WirePlumber config). Stock Arch libcamera
   # is used unmodified.
-  CAMERA_REPO_DIR="${HOME}/dev/sc200pc-linux"
-  if [[ ! -d "${CAMERA_REPO_DIR}/.git" ]]; then
-    mkdir -p "${HOME}/dev"
-    git clone https://github.com/jabbslad/sc200pc-linux "${CAMERA_REPO_DIR}"
-  else
-    git -C "${CAMERA_REPO_DIR}" pull --ff-only
+  if [[ "$INSTALL_CAMERA" == true ]]; then
+    CAMERA_REPO_DIR="${HOME}/dev/sc200pc-linux"
+    if [[ ! -d "${CAMERA_REPO_DIR}/.git" ]]; then
+      mkdir -p "${HOME}/dev"
+      git clone https://github.com/jabbslad/sc200pc-linux "${CAMERA_REPO_DIR}"
+    else
+      git -C "${CAMERA_REPO_DIR}" pull --ff-only
+    fi
+    bash "${CAMERA_REPO_DIR}/install.sh"
   fi
-  bash "${CAMERA_REPO_DIR}/install.sh"
 fi
 
 # Rebuild boot entry so kernel cmdline picks up the limine-entry-tool drop-ins
