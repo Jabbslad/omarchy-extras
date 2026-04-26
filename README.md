@@ -6,6 +6,13 @@ Extra setup on top of stock [Omarchy](https://omarchy.com). Run after a fresh in
 bash install.sh
 ```
 
+Optional flags:
+
+```bash
+bash install.sh --battery-saving  # apply optional power-saving tweaks
+bash install.sh --with-camera     # install Galaxy Book6 Pro camera drivers
+```
+
 The script is idempotent — safe to re-run. Model-specific fixes are gated by DMI detection.
 
 **Supported models:**
@@ -22,7 +29,7 @@ The script is idempotent — safe to re-run. Model-specific fixes are gated by D
 - **Touchpad:** natural scroll, clickfinger, no tap-to-click
 - **Nightlight:** auto warm screen at 20:00, daylight at 07:00
 - **Lock screen shortcut:** Super + Shift + L
-- **Battery:** PCI power management, NMI watchdog off, dirty writeback 15s, PCIe ASPM powersupersave, Bluetooth off by default, turbo boost auto-toggle via udev (on AC, off on battery)
+- **Battery (optional, with `--battery-saving`):** PCI power management, NMI watchdog off, dirty writeback 15s, PCIe ASPM powersupersave, Bluetooth off by default, turbo boost auto-toggle via udev (on AC, off on battery)
 - **Tailscale:** install, set operator, enable systray
 
 ### Zenbook 14 UX3405CA only
@@ -85,7 +92,7 @@ These reset on reboot. Apply as needed:
 brightnessctl set 60%
 ```
 
-**Re-enable Bluetooth** (disabled by default, re-enable when needed):
+**Re-enable Bluetooth** (disabled by `--battery-saving`, re-enable when needed):
 ```bash
 rfkill unblock bluetooth
 ```
