@@ -38,6 +38,10 @@ The script is idempotent — safe to re-run. Model-specific fixes are gated by D
 
 ### Galaxy Book6 Pro NP940XJG-KGDUK only
 
+- **Fn+F9 keyboard backlight fix:** installs the temporary
+  [**samsung-galaxybook-hotkey-dkms**](https://github.com/Jabbslad/samsung-galaxybook-hotkey-dkms)
+  DKMS override for SAM0430 ACPI hotkey notifications. Remove it once the
+  running kernel includes the upstream `samsung-galaxybook` hotkey fix.
 - **Panel Replay black screen fix:** disables `xe.enable_panel_replay=0` kernel
   param — Panel Replay (PSR successor) on the Panther Lake / Arc B390 xe driver
   causes intermittent black screen.

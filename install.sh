@@ -115,6 +115,21 @@ fi
 
 # --- Model-specific: Samsung Galaxy Book6 Pro (NP940XJG-KGDUK) ---
 if is_galaxybook6_pro; then
+  # Fn+F9 keyboard backlight fix. SAM0430 firmware sends an ACPI notification
+  # instead of a normal key event; this temporary DKMS override can be removed
+  # once the running kernel includes the upstream samsung-galaxybook hotkey fix.
+  yay -S --noconfirm --needed base-devel dkms linux-ptl-headers
+  HOTKEY_REPO_DIR="${HOME}/dev/samsung-galaxybook-hotkey-dkms"
+  if [[ ! -d "${HOTKEY_REPO_DIR}/.git" ]]; then
+    mkdir -p "${HOME}/dev"
+    git clone https://github.com/Jabbslad/samsung-galaxybook-hotkey-dkms "${HOTKEY_REPO_DIR}"
+  else
+    git -C "${HOTKEY_REPO_DIR}" pull --ff-only
+  fi
+  (cd "${HOTKEY_REPO_DIR}" && makepkg -C -f -s -i --noconfirm)
+  sudo modprobe -r samsung_galaxybook 2>/dev/null || true
+  sudo modprobe samsung_galaxybook
+
   # Omarchy default sets compose:caps, which turns Caps Lock into Compose on this keyboard.
   if grep -q "^[[:space:]]*kb_options = .*compose:caps" ~/.config/hypr/input.conf; then
     sed -i -E 's/^([[:space:]]*kb_options =).*/\1/' ~/.config/hypr/input.conf
