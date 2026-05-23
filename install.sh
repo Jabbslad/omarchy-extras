@@ -5,16 +5,19 @@ set -euo pipefail
 # Safe to re-run — all sections are idempotent.
 # Supported models: ASUS Zenbook 14 UX3405CA, Samsung Galaxy Book6 Pro NP940XJG-KGDUK.
 #
-# Usage: ./install.sh [--with-camera] [--battery-saving]
-#   --with-camera      Also install the Galaxy Book6 Pro camera drivers (sc200pc-linux).
-#   --battery-saving   Apply optional battery-saving tweaks.
+# Usage: ./install.sh [--with-camera] [--battery-saving] [--aggressive-battery-saving]
+#   --with-camera                 Also install the Galaxy Book6 Pro camera drivers (sc200pc-linux).
+#   --battery-saving              Apply conservative battery-saving tweaks.
+#   --aggressive-battery-saving   Also apply higher-risk/convenience-tradeoff battery tweaks.
 
 INSTALL_CAMERA=false
 BATTERY_SAVING=false
+AGGRESSIVE_BATTERY_SAVING=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --with-camera) INSTALL_CAMERA=true; shift ;;
     --battery-saving) BATTERY_SAVING=true; shift ;;
+    --aggressive-battery-saving) BATTERY_SAVING=true; AGGRESSIVE_BATTERY_SAVING=true; shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -41,6 +44,8 @@ mise reshim
 # --- Battery optimisations ---
 # Zenbook-specific notes: https://gist.github.com/jabbslad/e65ad403f5c3ebe3ca739d9e228245a0
 if [[ "$BATTERY_SAVING" == true ]]; then
+  NEEDS_LIMINE_UPDATE=false
+
   # PCI runtime power management - auto-suspend idle PCI devices
   sudo tee /etc/udev/rules.d/50-pci-powersave.rules >/dev/null <<'EOF'
 ACTION=="add", SUBSYSTEM=="pci", ATTR{power/control}="auto"
@@ -55,45 +60,75 @@ EOF
   echo 'vm.dirty_writeback_centisecs=1500' | sudo tee /etc/sysctl.d/50-dirty-writeback.conf >/dev/null
   sudo sysctl -q -w vm.dirty_writeback_centisecs=1500
 
-  # Disable Bluetooth by default - saves ~0.1-0.3W idle
-  # Toggle back on when needed: rfkill unblock bluetooth && sudo systemctl start bluetooth
-  sudo tee /etc/udev/rules.d/50-bluetooth-off.rules >/dev/null <<'EOF'
+  # Enable Wi-Fi power saving for wireless interfaces
+  sudo tee /etc/udev/rules.d/50-wifi-powersave.rules >/dev/null <<'EOF'
+ACTION=="add", SUBSYSTEM=="net", KERNEL=="wl*", RUN+="/usr/bin/iw dev %k set power_save on"
+EOF
+  for iface in /sys/class/net/wl*; do
+    [ -e "$iface" ] || continue
+    sudo iw dev "$(basename "$iface")" set power_save on 2>/dev/null || true
+  done
+
+  # Enable audio codec power management
+  sudo tee /etc/modprobe.d/50-audio-powersave.conf >/dev/null <<'EOF'
+options snd_hda_intel power_save=1 power_save_controller=Y
+EOF
+  if [ -e /sys/module/snd_hda_intel/parameters/power_save ]; then
+    echo 1 | sudo tee /sys/module/snd_hda_intel/parameters/power_save >/dev/null
+  fi
+  if [ -e /sys/module/snd_hda_intel/parameters/power_save_controller ]; then
+    echo Y | sudo tee /sys/module/snd_hda_intel/parameters/power_save_controller >/dev/null
+  fi
+
+  if [[ "$AGGRESSIVE_BATTERY_SAVING" == true ]]; then
+    # Disable Bluetooth by default - saves ~0.1-0.3W idle
+    # Toggle back on when needed: rfkill unblock bluetooth && sudo systemctl start bluetooth
+    sudo tee /etc/udev/rules.d/50-bluetooth-off.rules >/dev/null <<'EOF'
 ACTION=="add", SUBSYSTEM=="bluetooth", RUN+="/usr/bin/rfkill block bluetooth"
 EOF
-  rfkill block bluetooth 2>/dev/null || true
-  sudo systemctl disable --now bluetooth.service 2>/dev/null || true
+    rfkill block bluetooth 2>/dev/null || true
+    sudo systemctl disable --now bluetooth.service 2>/dev/null || true
 
-  # Disable unnecessary services on a laptop without a printer
-  sudo systemctl disable --now cups.service cups-browsed.service 2>/dev/null || true
-  sudo systemctl disable --now avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
-  # bolt.service is D-Bus activated - it starts on-demand when a Thunderbolt device is plugged in.
-  # No need to disable it; just don't eagerly start it.
+    # Disable unnecessary services on a laptop without a printer
+    sudo systemctl disable --now cups.service cups-browsed.service 2>/dev/null || true
+    sudo systemctl disable --now avahi-daemon.service avahi-daemon.socket 2>/dev/null || true
+    # bolt.service is D-Bus activated - it starts on-demand when a Thunderbolt device is plugged in.
+    # No need to disable it; just don't eagerly start it.
 
-  # Disable turbo boost on battery - saves 0.3-0.8W under mixed workloads
-  # Auto-managed by udev: turbo off on battery, on when plugged in
-  sudo tee /etc/udev/rules.d/50-turbo-boost.rules >/dev/null <<'EOF'
+    # Disable turbo boost on battery - saves 0.3-0.8W under mixed workloads
+    # Auto-managed by udev: turbo off on battery, on when plugged in
+    sudo tee /etc/udev/rules.d/50-turbo-boost.rules >/dev/null <<'EOF'
 # Disable turbo on battery (fires on boot via "add" and on plug/unplug via "change")
 ACTION=="add|change", SUBSYSTEM=="power_supply", ATTR{type}=="Mains", ATTR{online}=="0", RUN+="/bin/sh -c 'echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo'"
 # Enable turbo on AC
 ACTION=="add|change", SUBSYSTEM=="power_supply", ATTR{type}=="Mains", ATTR{online}=="1", RUN+="/bin/sh -c 'echo 0 > /sys/devices/system/cpu/intel_pstate/no_turbo'"
 EOF
-  # Apply now if on battery — find Mains power supply dynamically (naming varies: AC0, ADP1, etc.)
-  AC_ONLINE=1
-  for ps in /sys/class/power_supply/*/; do
-    [ "$(cat "$ps/type" 2>/dev/null)" = "Mains" ] || continue
-    AC_ONLINE="$(cat "$ps/online" 2>/dev/null || echo 1)"
-    break
-  done
-  if [ "$AC_ONLINE" = "0" ]; then
-    echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo >/dev/null
-  fi
+    # Apply now if on battery — find Mains power supply dynamically (naming varies: AC0, ADP1, etc.)
+    AC_ONLINE=1
+    for ps in /sys/class/power_supply/*/; do
+      [ "$(cat "$ps/type" 2>/dev/null)" = "Mains" ] || continue
+      AC_ONLINE="$(cat "$ps/online" 2>/dev/null || echo 1)"
+      break
+    done
+    if [ "$AC_ONLINE" = "0" ]; then
+      echo 1 | sudo tee /sys/devices/system/cpu/intel_pstate/no_turbo >/dev/null
+    fi
 
-  # PCIe ASPM powersupersave - enables L1.1/L1.2 substates for deeper PCIe link sleep
-  # Drop-in config for limine-entry-tool (persists across kernel updates)
-  echo 'KERNEL_CMDLINE[default]+=" pcie_aspm.policy=powersupersave"' |
-    sudo tee /etc/limine-entry-tool.d/pcie-aspm.conf >/dev/null
-  # Apply immediately without reboot
-  echo powersupersave | sudo tee /sys/module/pcie_aspm/parameters/policy >/dev/null
+    # PCIe ASPM powersupersave - enables L1.1/L1.2 substates for deeper PCIe link sleep
+    # Drop-in config for limine-entry-tool (persists across kernel updates)
+    echo 'KERNEL_CMDLINE[default]+=" pcie_aspm.policy=powersupersave"' |
+      sudo tee /etc/limine-entry-tool.d/pcie-aspm.conf >/dev/null
+    # Apply immediately without reboot
+    echo powersupersave | sudo tee /sys/module/pcie_aspm/parameters/policy >/dev/null
+    NEEDS_LIMINE_UPDATE=true
+  else
+    sudo rm -f /etc/udev/rules.d/50-bluetooth-off.rules /etc/udev/rules.d/50-turbo-boost.rules
+    if [ -e /etc/limine-entry-tool.d/pcie-aspm.conf ]; then
+      sudo rm -f /etc/limine-entry-tool.d/pcie-aspm.conf
+      NEEDS_LIMINE_UPDATE=true
+    fi
+    echo "Skipping aggressive battery-saving tweaks (pass --aggressive-battery-saving to enable)."
+  fi
 
   # NVMe APST fix - Micron 2500 (DRAM-less) enters deep power states that cause I/O timeouts
   # Limit to states with ≤5.5ms wake-up latency
@@ -103,12 +138,18 @@ EOF
       sudo tee /etc/limine-entry-tool.d/nvme-apst.conf >/dev/null
     # Apply immediately without reboot
     echo 5500 | sudo tee /sys/class/nvme/nvme0/power/pm_qos_latency_tolerance_us >/dev/null
+    NEEDS_LIMINE_UPDATE=true
   else
-    sudo rm -f /etc/limine-entry-tool.d/nvme-apst.conf
+    if [ -e /etc/limine-entry-tool.d/nvme-apst.conf ]; then
+      sudo rm -f /etc/limine-entry-tool.d/nvme-apst.conf
+      NEEDS_LIMINE_UPDATE=true
+    fi
   fi
 
-  # Rebuild boot entry so kernel cmdline picks up the limine-entry-tool drop-ins
-  sudo limine-update
+  # Rebuild boot entry only when kernel cmdline drop-ins changed.
+  if [[ "$NEEDS_LIMINE_UPDATE" == true ]]; then
+    sudo limine-update
+  fi
 else
   echo "Skipping battery-saving tweaks (pass --battery-saving to enable)."
 fi
