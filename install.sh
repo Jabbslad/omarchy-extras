@@ -29,8 +29,6 @@ is_galaxybook6_pro()  { [[ "$MODEL" == *"Galaxy Book6"* ]] || [[ "$MODEL" == *"N
 echo "Detected model: ${MODEL% }"
 
 # --- Packages ---
-yay -S --noconfirm --needed zed-bin
-
 # Remove 1password-beta (installed by stock Omarchy)
 if pacman -Qi 1password-beta &>/dev/null; then
   yay -Rns --noconfirm 1password-beta
