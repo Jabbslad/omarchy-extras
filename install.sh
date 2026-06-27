@@ -178,6 +178,68 @@ if is_galaxybook6_pro; then
     sed -i '/kb_layout/a\  kb_options =' ~/.config/hypr/input.conf
   fi
 
+  # Keyboard backlight idle restore. Omarchy's idle/lock path saves the kbd
+  # backlight level with `brightnessctl -s ... set 0`, but on this model the
+  # level is already 0 by the time it fires, so it saves 0 and every wake
+  # restores the keyboard to off. This helper snapshots the level early (while
+  # still on) and re-asserts it on wake; it auto-detects the *kbd_backlight*
+  # device and no-ops if none is found.
+  mkdir -p ~/.local/bin
+  cat > ~/.local/bin/kbd-backlight-idle <<'KBD_IDLE_EOF'
+#!/bin/bash
+# Reliable keyboard-backlight save/restore across idle / lock / suspend.
+#
+# Works around brightnessctl's saved state getting clobbered to 0: omarchy's
+# idle/lock path runs `brightnessctl -s <dev> set 0`, which saves the *current*
+# level before zeroing it. If the backlight is already off when that fires
+# (firmware timeout, or a previous cycle that didn't restore), it saves 0 and
+# every subsequent "restore" brings the keyboard back to off.
+#
+# Instead we snapshot the level early while it is still on (save, only when >0)
+# and re-assert it on wake after omarchy's own restore has run (restore).
+#
+# Usage: kbd-backlight-idle <save|restore>
+
+dev=''
+for c in /sys/class/leds/*kbd_backlight*; do
+  [ -e "$c" ] && { dev=$(basename "$c"); break; }
+done
+[ -n "$dev" ] || exit 0
+
+state="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/kbd_backlight.level"
+
+case "$1" in
+  save)
+    L=$(brightnessctl -d "$dev" get 2>/dev/null)
+    [ "${L:-0}" -gt 0 ] 2>/dev/null && printf '%s' "$L" >"$state"
+    ;;
+  restore)
+    # Let omarchy's own (clobberable) restore run first, then assert our value.
+    sleep 1
+    L=$(cat "$state" 2>/dev/null)
+    [ "${L:-0}" -gt 0 ] 2>/dev/null || L=3
+    brightnessctl -d "$dev" set "$L" >/dev/null
+    ;;
+esac
+KBD_IDLE_EOF
+  chmod +x ~/.local/bin/kbd-backlight-idle
+
+  if ! grep -q "kbd-backlight-idle" ~/.config/hypr/hypridle.conf 2>/dev/null; then
+    cat >> ~/.config/hypr/hypridle.conf <<'KBD_IDLE_LISTENER_EOF'
+
+# Remember the keyboard backlight level early (while it is still on) and
+# re-assert it on wake. Works around brightnessctl's saved state being
+# clobbered to 0 by omarchy-system-lock, which otherwise restores the
+# keyboard backlight to off after idle/lock/suspend.
+listener {
+    timeout = 5
+    on-timeout = kbd-backlight-idle save
+    on-resume = kbd-backlight-idle restore
+}
+KBD_IDLE_LISTENER_EOF
+    omarchy restart hypridle 2>/dev/null || true
+  fi
+
   # Camera enablement (SC200PC sensor + IPU7) lives in its own repo.
   # The installer builds the sc200pc DKMS driver, the ipu-bridge-sslc2000
   # DKMS driver, and the galaxybook6pro-camera meta package (which ships

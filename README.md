@@ -49,6 +49,12 @@ The script is idempotent — safe to re-run. Model-specific fixes are gated by D
   causes intermittent black screen.
 - **Caps Lock keyboard fix:** Omarchy's default `kb_options =
   compose:caps` breaks Caps Lock on this model; the script clears it.
+- **Keyboard backlight idle restore:** Omarchy turns the keyboard
+  backlight off on idle/lock and restores it via `brightnessctl`, but its
+  saved state gets clobbered to `0`, so the backlight stays off after
+  every wake. The script installs a `kbd-backlight-idle` helper and a
+  `hypridle` listener that snapshots the level early and re-asserts it on
+  resume (also covers suspend).
 - **Camera enablement** (Samsung SC200PC sensor on Intel IPU7) is
   delegated to a separate repo,
   [**sc200pc-linux**](https://github.com/jabbslad/sc200pc-linux). The
